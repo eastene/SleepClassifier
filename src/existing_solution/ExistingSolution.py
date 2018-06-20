@@ -92,3 +92,90 @@ def bidirectional_lstm_fn(batch_size):
     for i in range(num_steps):
         output, state = bd_lstm(eeg_channels[:, i], state)
     final_state = state
+
+    return final_state
+
+
+def deepsleepnet_model_fn(features, labels, mode):
+
+    # TODO set these as parameters
+    sampling_rate = 100
+    batch_size = 10
+
+    # CNN Portion (small and large filters)
+    small_filter_cnn = cnn_variable_filter(features, sampling_rate, mode, use_small_filter=True)
+    large_filter_cnn = cnn_variable_filter(features, sampling_rate, mode, use_small_filter=False)
+    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn])
+    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5)
+
+    # Bidirectional LSTM Portion (with shortcut connect)
+    shortcut_connect = tf.layers.dense(inputs=cnn_dropout, units=1024, activation=tf.nn.relu)
+    bd_lstm = bidirectional_lstm_fn(batch_size)
+    bd_lstm_output = tf.add(bd_lstm, shortcut_connect)
+
+    predictions = {
+        'classes': tf.argmax(bd_lstm_output, axis=1),
+        'predictions': tf.nn.softmax(bd_lstm_output, name='softmax_tensor')
+    }
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+
+    # Calculate Loss
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=bd_lstm_output)
+
+    # Configure the Training Op (for TRAIN mode)
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        train_op = optimizer.minimize(
+            loss=loss,
+            global_step=tf.train.get_global_step())
+        return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
+
+    # Add evaluation metrics (for EVAL mode)
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(
+            labels=labels, predictions=predictions["classes"])}
+    return tf.estimator.EstimatorSpec(
+        mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
+
+
+def main(argv):
+    train_data = None
+    train_labels = None
+    test_data = None
+    test_labels = None
+
+    # Create Estimator
+    deepsleepnet_classifier = tf.estimator.Estimator(
+        model_fn=deepsleepnet_model_fn, model_dir="/tmp/deepsleepnet_model")
+
+    # Set up logging for predictions
+    tensors_to_log = {"probabilities": "softmax_tensor"}
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
+
+    # Train the model
+    train_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x": train_data},
+        y=train_labels,
+        batch_size=100,
+        num_epochs=None,
+        shuffle=True)
+
+    deepsleepnet_classifier.train(
+        input_fn=train_input_fn,
+        steps=20000,
+        hooks=[logging_hook])
+
+    # Evaluate the model and print results
+    eval_input_fn = tf.estimator.inputs.numpy_input_fn(
+        x={"x": test_data},
+        y=test_labels,
+        num_epochs=1,
+        shuffle=False)
+    eval_results = deepsleepnet_classifier.evaluate(input_fn=eval_input_fn)
+    print(eval_results)
+
+
+if __name__ == "__main__":
+    tf.app.run()
