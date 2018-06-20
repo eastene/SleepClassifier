@@ -3,6 +3,8 @@ import tensorflow as tf
 
 from tensorflow.contrib.rnn import MultiRNNCell, BidirectionalGridLSTMCell, DropoutWrapper
 
+tf.logging.set_verbosity(tf.logging.INFO)
+
 def cnn_variable_filter(data, sampling_rate, mode, use_small_filter=True):
     """
     CNN with small filter size
@@ -98,13 +100,13 @@ def bidirectional_lstm_fn(batch_size):
 
 def deepsleepnet_model_fn(features, labels, mode):
 
-    # TODO set these as parameters
-    sampling_rate = 100
-    batch_size = 10
+    input_layer = features['x']
+    sampling_rate = features['fs']
+    batch_size = features['batch_size']
 
     # CNN Portion (small and large filters)
-    small_filter_cnn = cnn_variable_filter(features, sampling_rate, mode, use_small_filter=True)
-    large_filter_cnn = cnn_variable_filter(features, sampling_rate, mode, use_small_filter=False)
+    small_filter_cnn = cnn_variable_filter(input_layer, sampling_rate, mode, use_small_filter=True)
+    large_filter_cnn = cnn_variable_filter(input_layer, sampling_rate, mode, use_small_filter=False)
     cnn_output = tf.concat([small_filter_cnn, large_filter_cnn])
     cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5)
 
@@ -141,6 +143,9 @@ def deepsleepnet_model_fn(features, labels, mode):
 
 
 def main(argv):
+
+    sampling_rate = 100
+
     train_data = None
     train_labels = None
     test_data = None
@@ -156,7 +161,7 @@ def main(argv):
 
     # Train the model
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": train_data},
+        x={"x": train_data, "fs":sampling_rate},
         y=train_labels,
         batch_size=100,
         num_epochs=None,
