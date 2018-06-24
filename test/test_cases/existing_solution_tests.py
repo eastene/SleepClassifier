@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from mne.io import read_raw_edf
 
-from src.existing_solution.ExistingSolution import cnn_variable_filter
+from src.existing_solution.ExistingSolution import representation_learner
 
 class ExistingSolutionTestCase(unittest.TestCase):
 
@@ -13,7 +13,7 @@ class ExistingSolutionTestCase(unittest.TestCase):
         data = file['x']
         sampling_rate = file['fs']
 
-        cnn_variable_filter(data, sampling_rate, tf.estimator.ModeKeys.TRAIN)
+        representation_learner(data, sampling_rate, tf.estimator.ModeKeys.TRAIN)
 
 
     def test_cnn_large_filter(self):
@@ -22,4 +22,4 @@ class ExistingSolutionTestCase(unittest.TestCase):
         data = file['x']
         sampling_rate = file['fs']
 
-        cnn_variable_filter(data, sampling_rate, tf.estimator.ModeKeys.TRAIN, use_small_filter=False)
+        representation_learner(data, sampling_rate, tf.estimator.ModeKeys.TRAIN, use_small_filter=False)
