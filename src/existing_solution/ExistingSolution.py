@@ -1,7 +1,8 @@
-import tensorflow as tf
+import glob
 
-from tensorflow.contrib.rnn import MultiRNNCell, stack_bidirectional_rnn, LSTMCell, DropoutWrapper
 import numpy as np
+import tensorflow as tf
+from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -26,8 +27,7 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
 
     # Input layer
     # reshape EEG signal input to (# examples, # samples per 30s example), makes #-example 1D vectors
-    # TODO change to [-1, -1, 1] to make variable size
-    input_layer = tf.reshape(data, [100, 3000, 1])
+    input_layer = tf.reshape(data, [-1, 3000, 1])
 
     # Conv Layer 1
     # TODO add L2 Weight Decay to the 1st Conv Layer only to help prevent overfitting
@@ -131,24 +131,24 @@ def pretrain_fn(features, labels, mode):
 
     # Concatenate results of both CNNs
     cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
-    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5)
+    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
 
     # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
     flat_layer = tf.layers.flatten(inputs=cnn_dropout)
 
-
-    #softmax_layer = tf.layers.dense(inputs=flat_layer, units=6, activation=tf.nn.softmax, name='softmax_tensor')
+    # Softmax layer only used in pretraining, the weights to this layer are dropped after training
+    logits = tf.layers.dense(inputs=flat_layer, units=5)
 
     predictions = {
-        'classes': tf.argmax(flat_layer, axis=1),
-        'predictions': tf.nn.softmax(flat_layer, name='softmax_tensor')
+        'classes': tf.argmax(logits, axis=1),
+        'predictions': tf.nn.softmax(logits, name='softmax_tensor')
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
     # Calculate Loss
-    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=flat_layer)
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -220,16 +220,50 @@ def finetune_fn(features, labels, mode):
         mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
 
+def load_train_data():
+    train_files = glob.glob('../../data/existing_solution/prepared_data/SC40[0-9]*.npz')
+    train_data = []
+    train_labels = []
+    sampling_rate = 0
+
+    for f in train_files:
+        data = np.load(f)
+        train_data.append(data['x'])
+        train_labels.append(data['y'])
+        sampling_rate = data['fs']
+
+    return np.vstack(train_data), np.hstack(train_labels), sampling_rate
+
+
+def load_eval_data():
+    eval_files = glob.glob('../../data/existing_solution/prepared_data/SC41[0-2]*.npz')
+    eval_data = []
+    eval_labels = []
+
+    for f in eval_files:
+        data = np.load(f)
+        eval_data.append(data['x'])
+        eval_labels.append(data['y'])
+
+    return np.vstack(eval_data), np.hstack(eval_labels)
+
+
+def load_test_data():
+    test_files = glob.glob('../../data/existing_solution/prepared_data/SC41[3-4]*.npz')
+    test_data = []
+    test_labels = []
+
+    for f in test_files:
+        data = np.load(f)
+        test_data.append(data['x'])
+        test_labels.append(data['y'])
+
+    return np.vstack(test_data), np.hstack(test_labels)
+
+
 def main(argv):
-    data = np.load('../../data/existing_solution/prepared/SC4001E0.npz')
-    train_data = data['x']
-    train_labels = data['y']
 
-    sampling_rate = data['fs']
-
-    data = np.load('../../data/existing_solution/prepared/SC4002E0.npz')
-    test_data = data['x']
-    test_labels = data['y']
+    train_data, train_labels, sampling_rate = load_train_data()
 
     # ******** Pretrain Representation Learning Model ********
 
@@ -246,24 +280,44 @@ def main(argv):
     train_pretain_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_data},
         y=train_labels,
-        batch_size=100,
+        batch_size=200,
         num_epochs=None,
         shuffle=True
     )
 
     pretrainer.train(
         input_fn=train_pretain_fn,
-        steps=20000,
-        hooks=[logging_hook])
+        steps=4000,
+        hooks=[logging_hook]
+    )
+
+    eval_data, eval_label = load_eval_data()
 
     # Evaluate the model and print results
     eval_pretrain_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": test_data},
-        y=test_labels,
+        x={"x": eval_data},
+        y=eval_label,
         num_epochs=1,
         shuffle=False)
     eval_results = pretrainer.evaluate(input_fn=eval_pretrain_fn)
     print(eval_results)
+
+    test_data, test_label = load_test_data()
+
+    test_pretrain_fn =  tf.estimator.inputs.numpy_input_fn(
+        x={"x": test_data},
+        y=test_label,
+        num_epochs=1,
+        shuffle=False
+    )
+
+    raw_predictions = pretrainer.predict(input_fn=test_pretrain_fn)
+    predictions = [p['classes'] for p in raw_predictions]
+
+    con_mat = tf.confusion_matrix(labels=list(test_label), predictions=list(predictions))
+
+    with tf.Session() as sess:
+        print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat,feed_dict=None, session=None))
 
     # ******** Finetune DeepSleepNet Model ********
 
