@@ -3,6 +3,9 @@ import glob
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
+from tensorflow.contrib.layers import l2_regularizer
+from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -31,13 +34,18 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
 
     # Conv Layer 1
     # TODO add L2 Weight Decay to the 1st Conv Layer only to help prevent overfitting
+    l2_regulizer = l2_regularizer(0.001)
+
     conv_1 = tf.layers.conv1d(
         inputs=input_layer,
         filters=64,
         kernel_size=conv_1_filter_size,
         strides=conv_1_stride,
         activation=tf.nn.relu,
-        padding='SAME'
+        padding='SAME',
+        kernel_regularizer=l2_regulizer,
+        name="conv1_small" if use_small_filter else "conv1_large",
+        reuse=tf.AUTO_REUSE
     )
 
     # Max Pool Layer 1
@@ -53,7 +61,9 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         kernel_size=other_conv_size,
         strides=1,
         activation=tf.nn.relu,
-        padding='SAME'
+        padding='SAME',
+        name="conv2_small" if use_small_filter else "conv2_large",
+        reuse=tf.AUTO_REUSE
     )
 
     # Conv Layer 3
@@ -63,7 +73,9 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         kernel_size=other_conv_size,
         strides=1,
         activation=tf.nn.relu,
-        padding='SAME'
+        padding='SAME',
+        name="conv3_small" if use_small_filter else "conv3_large",
+        reuse=tf.AUTO_REUSE
     )
 
     # Conv Layer 4
@@ -73,7 +85,9 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         kernel_size=other_conv_size,
         strides=1,
         activation=tf.nn.relu,
-        padding='SAME'
+        padding='SAME',
+        name="conv4_small" if use_small_filter else "conv4_large",
+        reuse=tf.AUTO_REUSE
     )
 
     # Max Pool Layer 2
@@ -152,7 +166,7 @@ def pretrain_fn(features, labels, mode):
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
         train_op = optimizer.minimize(
             loss=loss,
             global_step=tf.train.get_global_step()
@@ -220,20 +234,20 @@ def finetune_fn(features, labels, mode):
         mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
 
-def load_train_data():
-    train_files = glob.glob('../../data/existing_solution/prepared_data/SC40[0-9]*.npz')
-    train_data = []
-    train_labels = []
+def load_data():
+    train_files = glob.glob('../../data/existing_solution/prepared_data/SC4*.npz')
+    X = []
+    Y = []
     sampling_rate = 0
 
     for f in train_files:
         data = np.load(f)
-        train_data.append(data['x'])
-        train_labels.append(data['y'])
+        X.append(data['x'])
+        Y.append(data['y'])
         sampling_rate = data['fs']
 
-    return np.vstack(train_data), np.hstack(train_labels), sampling_rate
-
+    return np.vstack(X), np.hstack(Y), sampling_rate
+"""
 
 def load_eval_data():
     eval_files = glob.glob('../../data/existing_solution/prepared_data/SC41[0-2]*.npz')
@@ -259,11 +273,24 @@ def load_test_data():
         test_labels.append(data['y'])
 
     return np.vstack(test_data), np.hstack(test_labels)
+"""
 
 
 def main(argv):
 
-    train_data, train_labels, sampling_rate = load_train_data()
+    data, labels, sampling_rate = load_data()
+
+    x = data.shape[0]
+    y = data.shape[1]
+
+    train_data, res_data, train_labels, res_labels = train_test_split(np.reshape(data, (x, y)), labels, test_size=0.25,
+                                                                      shuffle=True)
+
+    sos = SMOTE(ratio='auto', n_jobs=-1)
+    os_train_data, os_train_labels = sos.fit_sample(X=train_data, y=train_labels)
+
+    # SMOTE outputs float64, which causes issues with Tensorflow
+    os_train_data = os_train_data.astype(np.float32)
 
     # ******** Pretrain Representation Learning Model ********
 
@@ -278,8 +305,8 @@ def main(argv):
 
     # Train the model
     train_pretain_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": train_data},
-        y=train_labels,
+        x={"x": os_train_data},
+        y=os_train_labels,
         batch_size=200,
         num_epochs=None,
         shuffle=True
@@ -287,26 +314,24 @@ def main(argv):
 
     pretrainer.train(
         input_fn=train_pretain_fn,
-        steps=4000,
+        steps=2000,
         hooks=[logging_hook]
     )
 
-    eval_data, eval_label = load_eval_data()
+    eval_data, test_data, eval_labels, test_labels = train_test_split(res_data, res_labels, test_size=0.4)
 
     # Evaluate the model and print results
     eval_pretrain_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": eval_data},
-        y=eval_label,
+        y=eval_labels,
         num_epochs=1,
         shuffle=False)
     eval_results = pretrainer.evaluate(input_fn=eval_pretrain_fn)
     print(eval_results)
 
-    test_data, test_label = load_test_data()
-
-    test_pretrain_fn =  tf.estimator.inputs.numpy_input_fn(
+    test_pretrain_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": test_data},
-        y=test_label,
+        y=test_labels,
         num_epochs=1,
         shuffle=False
     )
@@ -314,7 +339,7 @@ def main(argv):
     raw_predictions = pretrainer.predict(input_fn=test_pretrain_fn)
     predictions = [p['classes'] for p in raw_predictions]
 
-    con_mat = tf.confusion_matrix(labels=list(test_label), predictions=list(predictions))
+    con_mat = tf.confusion_matrix(labels=list(test_labels), predictions=list(predictions))
 
     with tf.Session() as sess:
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat,feed_dict=None, session=None))
