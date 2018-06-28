@@ -287,6 +287,8 @@ def load_test_data():
 
 def main(argv):
 
+    # ******** Pretrain Representation Learning Model ********
+
     # Load dataset
     data, labels, sampling_rate = load_data()
     x = data.shape[0]
@@ -301,8 +303,6 @@ def main(argv):
     os_data, os_labels = rus.fit_sample(fold_data, y=fold_labels)
     os_data = os_data.astype(np.float32)  # SMOTE outputs float64, which causes issues with Tensorflow
     print("Post Oversampling Label Counts {}".format(np.bincount(os_labels)))
-
-    # ******** Pretrain Representation Learning Model ********
 
     # Create Pretrain Estimator
     pretrainer = tf.estimator.Estimator(
@@ -368,8 +368,11 @@ def main(argv):
         print("Results of Pretraining Feature Representaion:")
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
 
-"""
+
     # ******** Fine-tune DeepSleepNet Model ********
+
+    # Use per-subject data for sequence learner
+
 
     # Create DeepSleepNet Estimator
     finetuner = tf.estimator.Estimator(
@@ -416,7 +419,7 @@ def main(argv):
     with tf.Session() as sess:
         print("Results of DeepSleepNet Model:")
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
-"""
+
 
 
 if __name__ == "__main__":
