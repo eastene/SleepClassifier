@@ -5,10 +5,7 @@ import tensorflow as tf
 from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
 from tensorflow.contrib.layers import l2_regularizer
 from sklearn.model_selection import train_test_split, KFold
-from imblearn.over_sampling import SMOTE, RandomOverSampler
-from imblearn.combine import SMOTEENN
-from imblearn.under_sampling import RandomUnderSampler
-
+from imblearn.over_sampling import RandomOverSampler
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
@@ -103,10 +100,13 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
     return pool_2
 
 
-def sequence_residual_learner(inputs):
+def sequence_residual_learner_fn(features, labels, mode):
+
+    input_layer = tf.layers.flatten(features['x'])
+
     lstm_size = 512
-    eeg_channels = tf.unstack(inputs, axis=2)
-    batch_size = tf.shape(eeg_channels[0])[0]
+    input_seqs = tf.split(input_layer, num_or_size_splits=10, axis=1)
+    batch_size = tf.shape(input_seqs[0])[0]
 
     # Bidirectional LSTM Cell
     lstm_cell = LSTMCell(lstm_size)
@@ -119,43 +119,19 @@ def sequence_residual_learner(inputs):
 
     num_layer = 1
     output, state_fw, state_bw = stack_bidirectional_rnn(
-        inputs=eeg_channels,
+        inputs=input_seqs,
         cells_fw=[lstm_dropout] * num_layer,
         cells_bw=[lstm_dropout] * num_layer,
         initial_states_fw=[initial_states] * num_layer,
         initial_states_bw=[initial_states] * num_layer
     )
 
-    return output
+    batch_normalizer = tf.layers.batch_normalization(input_layer, epsilon=1e-5)
+    shortcut_connect = tf.layers.dense(inputs=batch_normalizer, units=1024, activation=tf.nn.relu)
+    concat_layer = tf.add(output, shortcut_connect)
+    concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
+    logits = tf.layers.dense(inputs=concat_dropout, units=5)
 
-
-def pretrain_fn(features, labels, mode):
-    """
-    Pretrain the feature representation learning model (CNNs with large and small filters) only (No LSTM)
-    Expects to be trained on a dataset with some sort of supersampling of underrepresented classes (e.g. N1)
-    in order to train the model's feature representation learning with features that represent all classes well.
-    :param features:
-    :param labels:
-    :param mode:
-    :return:
-    """
-
-    input_layer = features['x']
-    sampling_rate = 100  # features['fs']
-
-    # CNN Portion (small and large filters)
-    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
-    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
-
-    # Concatenate results of both CNNs
-    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
-    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
-
-    # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
-    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
-
-    # Softmax layer only used in pretraining, the weights to this layer are dropped after training
-    logits = tf.layers.dense(inputs=flat_layer, units=5)
 
     predictions = {
         'classes': tf.argmax(logits, axis=1),
@@ -170,7 +146,68 @@ def pretrain_fn(features, labels, mode):
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.001, beta1=0.9, beta2=0.999)
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        train_op = optimizer.minimize(
+            loss=loss,
+            global_step=tf.train.get_global_step())
+        return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
+
+    # Add evaluation metrics (for EVAL mode)
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(
+            labels=labels, predictions=predictions["classes"])}
+    return tf.estimator.EstimatorSpec(
+        mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
+
+
+def representation_learner_fn(features, labels, mode, params):
+    """
+    Pretrain the feature representation learning model (CNNs with large and small filters) only (No LSTM)
+    Expects to be trained on a dataset with some sort of supersampling of underrepresented classes (e.g. N1)
+    in order to train the model's feature representation learning with features that represent all classes well.
+    :param features: EEG signals over 30s intervals for each batch
+    :param labels: Sleep stage labels (W, N1, N2, N3, REM) for each batch
+    :param mode: Mode to run function in [Training, Eval, Test] (see tf.estimator.ModeKeys)
+    :param params: dict containing "learn_rate" (Learning Rate), "fs" (EEG Sampling Rate - 100hz)
+    :return: EstimatorSpec
+    """
+
+    # retrieve hyperparameters
+    learn_rate = params['learn_rate']
+    sampling_rate = params['fs']
+
+    # Input Layer (batch_size * feature_size)
+    input_layer = features['x']
+
+    # CNN Portion (small and large filters)
+    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
+    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
+
+    # Concatenate results of both CNNs
+    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
+    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
+
+    # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
+    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
+
+    # Softmax layer only used in pretraining, the weights to this layer are dropped after training
+    # Size is now (batch_size * 5)
+    logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits')
+
+    predictions = {
+        'classes': tf.argmax(logits, axis=1),
+        'predictions': tf.nn.softmax(logits, name='softmax_tensor')
+    }
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+
+    # Calculate Loss
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
+
+    # Configure the Training Op (for TRAIN mode)
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        optimizer = tf.train.AdamOptimizer(learning_rate=learn_rate, beta1=0.9, beta2=0.999)
         train_op = optimizer.minimize(
             loss=loss,
             global_step=tf.train.get_global_step()
@@ -197,6 +234,7 @@ def finetune_fn(features, labels, mode):
     :return:
     """
     input_layer = features['x']
+    print(input_layer)
     sampling_rate = 100  # features['fs']
 
     # CNN Portion (small and large filters)
@@ -209,23 +247,22 @@ def finetune_fn(features, labels, mode):
     flat_layer = tf.layers.flatten(inputs=cnn_dropout)
 
     # Bidirectional LSTM Portion (with shortcut connect)
-    seq_learn_out = sequence_residual_learner(inputs=cnn_dropout)
-
+    seq_learn_out = sequence_residual_learner(inputs=flat_layer)
     shortcut_connect = tf.layers.dense(inputs=flat_layer, units=1024, activation=tf.nn.relu)
-
-    print(seq_learn_out[0])
-    combined_output = tf.add(seq_learn_out, shortcut_connect)
+    concat_layer = tf.add(seq_learn_out, shortcut_connect)
+    concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
+    output_layer = tf.layers.dense(inputs=concat_dropout, units=5)
 
     predictions = {
-        'classes': tf.argmax(combined_output, axis=1),
-        'predictions': tf.nn.softmax(combined_output, name='softmax_tensor')
+        'classes': tf.argmax(output_layer, axis=1),
+        'predictions': tf.nn.softmax(output_layer, name='softmax_tensor')
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
     # Calculate Loss
-    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=combined_output)
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=output_layer)
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -256,33 +293,6 @@ def load_data():
         sampling_rate = data['fs']
 
     return np.vstack(X), np.hstack(Y), sampling_rate
-"""
-
-def load_eval_data():
-    eval_files = glob.glob('../../data/existing_solution/prepared_data/SC41[0-2]*.npz')
-    eval_data = []
-    eval_labels = []
-
-    for f in eval_files:
-        data = np.load(f)
-        eval_data.append(data['x'])
-        eval_labels.append(data['y'])
-
-    return np.vstack(eval_data), np.hstack(eval_labels)
-
-
-def load_test_data():
-    test_files = glob.glob('../../data/existing_solution/prepared_data/SC41[3-4]*.npz')
-    test_data = []
-    test_labels = []
-
-    for f in test_files:
-        data = np.load(f)
-        test_data.append(data['x'])
-        test_labels.append(data['y'])
-
-    return np.vstack(test_data), np.hstack(test_labels)
-"""
 
 
 def main(argv):
@@ -304,14 +314,27 @@ def main(argv):
     os_data = os_data.astype(np.float32)  # SMOTE outputs float64, which causes issues with Tensorflow
     print("Post Oversampling Label Counts {}".format(np.bincount(os_labels)))
 
+    # Pretrainer Hyperparameters
+    pretrainer_params = {
+        "learn_rate": 0.0001,
+        "fs": sampling_rate
+    }
+
     # Create Pretrain Estimator
     pretrainer = tf.estimator.Estimator(
-        model_fn=pretrain_fn, model_dir="/tmp/deepsleepnet_model"
+        model_fn=representation_learner_fn,
+        model_dir="/tmp/rep_learn_model",
+        params=pretrainer_params
     )
+    # Set up logging for predictions
+    tensors_to_log = {"probabilities": "softmax_tensor"}
+    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
 
     # Perform k=20 cross validation
     folds = KFold(n_splits=20, shuffle=False)
 
+    """
+    # Loop over Splits
     k = 0
     for train_idx, res_idx in folds.split(os_data):
 
@@ -320,10 +343,6 @@ def main(argv):
         train_labels = os_labels[train_idx]
         eval_data = os_data[res_idx]
         eval_labels = os_labels[res_idx]
-
-        # Set up logging for predictions
-        tensors_to_log = {"probabilities": "softmax_tensor"}
-        logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
 
         # Generate Training Function
         train_pretain_fn = tf.estimator.inputs.numpy_input_fn(
@@ -367,44 +386,88 @@ def main(argv):
     with tf.Session() as sess:
         print("Results of Pretraining Feature Representaion:")
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
-
-
+    """
     # ******** Fine-tune DeepSleepNet Model ********
 
-    # Use per-subject data for sequence learner
+    # Finetuner Hyperparameters
+    finetuner_params = {
+        "learn_rate": 0.000001,
+        "fs": sampling_rate
+    }
 
-
+    # Use per-subject data for sequence learner (no oversampling)
     # Create DeepSleepNet Estimator
     finetuner = tf.estimator.Estimator(
-        model_fn=finetune_fn, model_dir="/tmp/deepsleepnet_model"
+        model_fn=representation_learner_fn,
+        model_dir="/tmp/rep_learn_model",
+        params=finetuner_params
     )
 
-    # Set up logging for predictions
-    tensors_to_log = {"probabilities": "softmax_tensor"}
-    logging_hook = tf.train.LoggingTensorHook(tensors=tensors_to_log, every_n_iter=50)
-
-    # Train the model
-    train_finetune_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": train_data},
-        y=train_labels,
-        batch_size=100,
-        num_epochs=None,
-        shuffle=True
+    seq_learner = tf.estimator.Estimator(
+        model_fn=sequence_residual_learner_fn,
+        model_dir="/tmp/seq_res_model"
     )
 
-    finetuner.train(
-        input_fn=train_finetune_fn,
-        steps=20000,
-        hooks=[logging_hook])
+    k = 0
+    for train_idx, res_idx in folds.split(fold_data):
 
-    # Evaluate the model and print results
-    eval_finetune_fn = tf.estimator.inputs.numpy_input_fn(
-        x={"x": test_data},
-        y=test_labels,
-        num_epochs=1,
-        shuffle=False)
-    eval_results = finetuner.evaluate(input_fn=eval_finetune_fn)
-    print(eval_results)
+        # Define Fold
+        train_data = fold_data[train_idx]
+        train_labels = fold_labels[train_idx]
+        eval_data = fold_data[res_idx]
+        eval_labels = fold_labels[res_idx]
+
+        # resets state parameters of LSTM when training on different subjects
+        for i in range(len(train_data)):
+            # Split each input into 10 equal-length subsequences
+            splits = np.reshape(train_data[i], (1, 3000))
+            label = np.repeat(train_labels[i], 1)
+            """
+            # Train the model
+            train_finetune_fn = tf.estimator.inputs.numpy_input_fn(
+                x={"x": splits},
+                y=label,
+                batch_size=1,
+                num_epochs=None,
+                shuffle=False
+            )
+
+            learned_feats = finetuner.train(
+                input_fn=train_finetune_fn,
+                max_steps=1,
+                hooks=[logging_hook]
+            )
+            """
+
+            train_seq_res_fn = tf.estimator.inputs.numpy_input_fn(
+                x={"x": splits},
+                y=label,
+                batch_size=10,
+                num_epochs=None,
+                shuffle=False
+            )
+
+            seq_learner.train(
+                input_fn=train_seq_res_fn,
+                steps=1,
+                hooks=[logging_hook]
+            )
+
+        #for i in range(len(eval_data)):
+        # Evaluate the model and print results
+        eval_finetune_fn = tf.estimator.inputs.numpy_input_fn(
+            x={"x": eval_data},
+            y=eval_labels,
+            num_epochs=1,
+            shuffle=False
+        )
+        eval_results = finetuner.evaluate(input_fn=eval_finetune_fn)
+
+            #if i % 100 == 0:
+        print("Results of fold {}:".format(k))
+        print(eval_results)
+
+        k = k + 1
 
     # Test Model and Print Confusion Matrix
     test_finetune_fn = tf.estimator.inputs.numpy_input_fn(
@@ -419,7 +482,6 @@ def main(argv):
     with tf.Session() as sess:
         print("Results of DeepSleepNet Model:")
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
-
 
 
 if __name__ == "__main__":
