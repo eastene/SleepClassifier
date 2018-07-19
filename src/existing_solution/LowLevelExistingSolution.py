@@ -8,21 +8,67 @@ from imblearn.over_sampling import RandomOverSampler
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
+tf.flags.DEFINE_integer("num_parallel_readers", 1, "number of parallel I/O threads")
+tf.flags.DEFINE_integer("shuffle_buffer_size", 3, "size (in batches) of in-memory buffer for dataset shuffling")
+tf.flags.DEFINE_integer("batch_size", 100, "batch size")
+tf.flags.DEFINE_integer("num_parallel_calls", 8, "number of parallel dataset parsing threads "
+                                                "(recommended to be equal to number of CPU cores")
+tf.flags.DEFINE_integer("prefetch_buffer_size", 3, "size (in batches) of in-memory buffer to prefetch records before parsing")
+tf.flags.DEFINE_integer("num_epochs_pretrain", 100, "number of epochs for pre-training")
+tf.flags.DEFINE_integer("num_epochs_finetune", 1, "number of epochs for fine tuning")
+
+FLAGS = tf.flags.FLAGS
+INPUT_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC*.tfrecord"
+
+"""
+*
+* INPUT PIPELINE
+*
+"""
 
 
-def load_data():
-    train_files = glob.glob('../../data/existing_solution/prepared_data/SC4*.npz')
-    X = []
-    Y = []
-    sampling_rate = 0
+def sleep_data_parse_fn(example):
+    # format of each training example
+    example_fmt = {
+        "signal": tf.FixedLenFeature((1,3000), tf.float32),
+        "label": tf.FixedLenFeature((), tf.int64, -1),
+        "sampling_rate": tf.FixedLenFeature((), tf.float32, 0.0)
+    }
 
-    for f in train_files:
-        data = np.load(f)
-        X.append(data['x'])
-        Y.append(data['y'])
-        sampling_rate = data['fs']
+    parsed = tf.parse_single_example(example, example_fmt)
 
-    return np.vstack(X), np.hstack(Y), sampling_rate
+    return parsed['signal'], parsed['label'], parsed['sampling_rate']
+
+
+def input_fn():
+    files = tf.data.Dataset.list_files(file_pattern=INPUT_FILE_PATTERN, shuffle=False)
+
+    # interleave reading of dataset for parallel I/O
+    dataset = files.apply(
+        tf.contrib.data.parallel_interleave(
+            tf.data.TFRecordDataset, cycle_length=FLAGS.num_parallel_readers
+        )
+    )
+
+    dataset = dataset.cache()
+
+    # shuffle data and repeat (if num epochs > 1)
+    dataset = dataset.apply(
+        tf.contrib.data.shuffle_and_repeat(buffer_size=FLAGS.shuffle_buffer_size)
+    )
+
+    # parse the data and prepares the batches in parallel (helps most with larger batches)
+    dataset = dataset.apply(
+        tf.contrib.data.map_and_batch(
+            map_func=sleep_data_parse_fn, batch_size=FLAGS.batch_size
+        )
+    )
+
+    # prefetch data so that the CPU can prepare the next batch(s) while the GPU trains
+    # recommmend setting buffer size to number of training examples per training step
+    dataset = dataset.prefetch(buffer_size=FLAGS.prefetch_buffer_size)
+
+    return dataset
 
 
 def representation_learner(data, sampling_rate, mode, use_small_filter=True):
@@ -120,14 +166,13 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     # hyper-parameters
     n_folds = 20
     fold_test_split = 0.1
-    epochs = 100
     learn_rate = 0.0001
-    batch_size = 100
     sampling_rate = 100
 
     # inputs
-    x = tf.placeholder(dtype=tf.float32)
+    x = tf.placeholder(shape=(100, 1, 3000), dtype=tf.float32)
     y = tf.placeholder(dtype=tf.int32)
+    fs = tf.placeholder(dtype=tf.int32)
 
     # define model
     input_layer = tf.reshape(x, [-1, 3000, 1])
@@ -153,12 +198,38 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     # define initialisation operator
     init_op = tf.global_variables_initializer()
 
-    # batches
-    batch = tf.train.batch([image, label], batch_size=100)
+    # batch iterator
+    dataset_iter = input_fn().make_initializable_iterator()
+    next_elem = dataset_iter.get_next()
 
     with tf.Session() as sess:
+        # initialize
         sess.run(init_op)
+        sess.run(dataset_iter.initializer)
 
+        train_data_size = 20
+
+        for epoch in range(FLAGS.num_epochs_pretrain):
+            avg_cost = 0.0
+            for batch in range(train_data_size):
+                dataset = sess.run(next_elem)
+
+                feed_dict = {
+                    x: dataset[0],
+                    y: dataset[1],
+                    fs: dataset[2]
+                }
+
+                _, c = sess.run(
+                    [train_op, loss],
+                    feed_dict=feed_dict
+                )
+
+                avg_cost += c / train_data_size
+
+                if epoch % 3 == 0 and batch == 0:
+                    print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(avg_cost))
+    """
         data, labels, fs = load_data()
         r = data.shape[0]
         c = data.shape[1]
@@ -185,7 +256,7 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
 
             for epoch in range(epochs):
                 # Train Loop
-                """avg_cost = 0
+                avg_cost = 0
                 for index, offset in enumerate(range(0, train_data.shape[0], batch_size)):
                     train_data_batch = train_data[offset:offset + batch_size]
                     train_label_batch = train_labels[offset:offset + batch_size]
@@ -199,7 +270,7 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
                         [train_op, loss],
                         feed_dict=feed_dict
                     )
-                """
+                
                 print(tf.train.batch([train_data, train_labels], batch_size=100, num_threads=8))
                 _, c = sess.run(
                     [train_op, loss],
@@ -231,7 +302,7 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
         con_mat = tf.confusion_matrix(labels=list(test_labels), predictions=list(predictions))
         print("Results of Pretraining Feature Representaion:")
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
-
+        """
 
 def main(unused_argv):
     pretrain(tf.estimator.ModeKeys.TRAIN)

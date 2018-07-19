@@ -9,7 +9,7 @@ from imblearn.over_sampling import RandomOverSampler
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
-def representation_learner(data, sampling_rate, mode, use_small_filter=True):
+def representation_learner(data, sampling_rate, mode, use_small_filter=True, trainable=True):
     """
     CNN with small filter size
     :param data: EEG signal input
@@ -49,7 +49,8 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         padding='SAME',
         kernel_regularizer=l2_regulizer,
         name=conv_1_name,
-        reuse=tf.AUTO_REUSE
+        reuse=tf.AUTO_REUSE,
+        trainable=trainable
     )
 
     # Max Pool Layer 1
@@ -67,7 +68,8 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         activation=tf.nn.relu,
         padding='SAME',
         name=conv_2_name,
-        reuse=tf.AUTO_REUSE
+        reuse=tf.AUTO_REUSE,
+        trainable=trainable
     )
 
     # Conv Layer 3
@@ -79,7 +81,8 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         activation=tf.nn.relu,
         padding='SAME',
         name=conv_3_name,
-        reuse=tf.AUTO_REUSE
+        reuse=tf.AUTO_REUSE,
+        trainable=trainable
     )
 
     # Conv Layer 4
@@ -91,7 +94,8 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
         activation=tf.nn.relu,
         padding='SAME',
         name=conv_4_name,
-        reuse=tf.AUTO_REUSE
+        reuse=tf.AUTO_REUSE,
+        trainable=trainable
     )
 
     # Max Pool Layer 2
@@ -100,12 +104,28 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
     return pool_2
 
 
-def sequence_residual_learner_fn(features, labels, mode):
+def sequence_residual_learner_fn(features, labels, mode, params):
 
+    # retrieve hyperparameters
+    learn_rate = params['learn_rate']
+    sampling_rate = params['fs']
+
+    # Input Layer (batch_size * feature_size)
     input_layer = tf.layers.flatten(features['x'])
 
+    # CNN Portion (small and large filters)
+    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True, trainable=False)
+    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False, trainable=False)
+
+    # Concatenate results of both CNNs
+    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
+    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
+
+    # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
+    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
+
     lstm_size = 512
-    input_seqs = tf.split(input_layer, num_or_size_splits=10, axis=1)
+    input_seqs = tf.split(flat_layer, num_or_size_splits=12, axis=1)
     batch_size = tf.shape(input_seqs[0])[0]
 
     # Bidirectional LSTM Cell
@@ -118,6 +138,8 @@ def sequence_residual_learner_fn(features, labels, mode):
     initial_states = lstm_dropout.zero_state(batch_size, dtype=tf.float32)
 
     num_layer = 1
+    # states are dropped after training on each sample so that the states from
+    # one sample does not influence those of another
     output, state_fw, state_bw = stack_bidirectional_rnn(
         inputs=input_seqs,
         cells_fw=[lstm_dropout] * num_layer,
@@ -126,7 +148,7 @@ def sequence_residual_learner_fn(features, labels, mode):
         initial_states_bw=[initial_states] * num_layer
     )
 
-    batch_normalizer = tf.layers.batch_normalization(input_layer, epsilon=1e-5)
+    batch_normalizer = tf.layers.batch_normalization(flat_layer, epsilon=1e-5)
     shortcut_connect = tf.layers.dense(inputs=batch_normalizer, units=1024, activation=tf.nn.relu)
     concat_layer = tf.add(output, shortcut_connect)
     concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
@@ -146,7 +168,7 @@ def sequence_residual_learner_fn(features, labels, mode):
 
     # Configure the Training Op (for TRAIN mode)
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        optimizer = tf.train.AdamOptimizer(learning_rate=learn_rate)
         train_op = optimizer.minimize(
             loss=loss,
             global_step=tf.train.get_global_step())
@@ -397,15 +419,10 @@ def main(argv):
 
     # Use per-subject data for sequence learner (no oversampling)
     # Create DeepSleepNet Estimator
-    finetuner = tf.estimator.Estimator(
-        model_fn=representation_learner_fn,
-        model_dir="/tmp/rep_learn_model",
-        params=finetuner_params
-    )
-
     seq_learner = tf.estimator.Estimator(
         model_fn=sequence_residual_learner_fn,
-        model_dir="/tmp/seq_res_model"
+        model_dir="/tmp/rep_learn_model",
+        params=finetuner_params
     )
 
     k = 0
@@ -461,7 +478,7 @@ def main(argv):
             num_epochs=1,
             shuffle=False
         )
-        eval_results = finetuner.evaluate(input_fn=eval_finetune_fn)
+        eval_results = seq_learner.evaluate(input_fn=eval_finetune_fn)
 
             #if i % 100 == 0:
         print("Results of fold {}:".format(k))
