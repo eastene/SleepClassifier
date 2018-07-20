@@ -173,6 +173,7 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     x = tf.placeholder(shape=(100, 1, 3000), dtype=tf.float32)
     y = tf.placeholder(dtype=tf.int32)
     fs = tf.placeholder(dtype=tf.int32)
+    sampling_rate = fs.eval()
 
     # define model
     input_layer = tf.reshape(x, [-1, 3000, 1])
@@ -212,7 +213,7 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
         for epoch in range(FLAGS.num_epochs_pretrain):
             avg_cost = 0.0
             for batch in range(train_data_size):
-                dataset = sess.run(next_elem)
+                dataset = sess.run(next_elem)  # list of [signal, label, sampling_rate]
 
                 feed_dict = {
                     x: dataset[0],

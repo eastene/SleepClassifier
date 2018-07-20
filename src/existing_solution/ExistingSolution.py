@@ -38,7 +38,13 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True, tra
     input_layer = tf.reshape(data, [-1, 3000, 1])
 
     # Conv Layer 1
-    batch_normalizer = tf.layers.batch_normalization(input_layer,epsilon=1e-5)
+    batch_normalizer = tf.layers.batch_normalization(
+        input_layer,
+        epsilon=1e-5,
+        reuse=tf.AUTO_REUSE,
+        name="conv_batch_normalizer"
+    )
+
     l2_regulizer = l2_regularizer(0.001)
     conv_1 = tf.layers.conv1d(
         inputs=batch_normalizer,
@@ -105,6 +111,14 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True, tra
 
 
 def sequence_residual_learner_fn(features, labels, mode, params):
+    """
+    Train the entire DeepSleepNet model using the parameters learned in the pretraining phase.
+    :param features: 30s of EEG signal sampled at sampling_rate times per second
+    :param labels: sleep stage labels (1-5)
+    :param mode: training/eval/predict mode for the model
+    :param params: dict containing "learn_rate" (Learning Rate), "fs" (EEG Sampling Rate - 100hz)
+    :return: None
+    """
 
     # retrieve hyperparameters
     learn_rate = params['learn_rate']
@@ -113,46 +127,55 @@ def sequence_residual_learner_fn(features, labels, mode, params):
     # Input Layer (batch_size * feature_size)
     input_layer = tf.layers.flatten(features['x'])
 
-    # CNN Portion (small and large filters)
-    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True, trainable=False)
-    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False, trainable=False)
+    with tf.variable_scope("rep_scope"):
 
-    # Concatenate results of both CNNs
-    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
-    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
+        # CNN Portion (small and large filters)
+        small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True, trainable=False)
+        large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False, trainable=False)
+
+        # Concatenate results of both CNNs
+        cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
+        cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
 
     # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
     flat_layer = tf.layers.flatten(inputs=cnn_dropout)
 
-    lstm_size = 512
-    input_seqs = tf.split(flat_layer, num_or_size_splits=12, axis=1)
-    batch_size = tf.shape(input_seqs[0])[0]
+    with tf.variable_scope("seq_scope"):
+        lstm_size = 512
+        input_seqs = tf.split(flat_layer, num_or_size_splits=25, axis=0)
+        batch_size = tf.shape(input_seqs[0])[0]
 
-    # Bidirectional LSTM Cell
-    lstm_cell = LSTMCell(lstm_size)
+        # Bidirectional LSTM Cell
+        lstm_cell = LSTMCell(lstm_size)
 
-    # Dropout Between Layers
-    lstm_dropout = DropoutWrapper(lstm_cell, input_keep_prob=0.5, output_keep_prob=0.5, state_keep_prob=0.5)
+        # Dropout Between Layers
+        lstm_dropout = DropoutWrapper(lstm_cell, input_keep_prob=0.5, output_keep_prob=0.5, state_keep_prob=0.5)
 
-    # 2-Layered Bidirectional LSTM
-    initial_states = lstm_dropout.zero_state(batch_size, dtype=tf.float32)
+        # 2-Layered Bidirectional LSTM
+        initial_states = lstm_dropout.zero_state(batch_size, dtype=tf.float32)
 
-    num_layer = 1
-    # states are dropped after training on each sample so that the states from
-    # one sample does not influence those of another
-    output, state_fw, state_bw = stack_bidirectional_rnn(
-        inputs=input_seqs,
-        cells_fw=[lstm_dropout] * num_layer,
-        cells_bw=[lstm_dropout] * num_layer,
-        initial_states_fw=[initial_states] * num_layer,
-        initial_states_bw=[initial_states] * num_layer
-    )
+        num_layer = 1
+        # states are dropped after training on each sample so that the states from
+        # one sample does not influence those of another
+        output, state_fw, state_bw = stack_bidirectional_rnn(
+            inputs=input_seqs,
+            cells_fw=[lstm_dropout] * num_layer,
+            cells_bw=[lstm_dropout] * num_layer,
+            initial_states_fw=[initial_states] * num_layer,
+            initial_states_bw=[initial_states] * num_layer
+        )
 
-    batch_normalizer = tf.layers.batch_normalization(flat_layer, epsilon=1e-5)
-    shortcut_connect = tf.layers.dense(inputs=batch_normalizer, units=1024, activation=tf.nn.relu)
-    concat_layer = tf.add(output, shortcut_connect)
-    concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
-    logits = tf.layers.dense(inputs=concat_dropout, units=5)
+        batch_normalizer = tf.layers.batch_normalization(
+            flat_layer,
+            epsilon=1e-5,
+            reuse=tf.AUTO_REUSE,
+            name="seq_batch_normalizer"
+        )
+
+        shortcut_connect = tf.layers.dense(inputs=batch_normalizer, units=1024, activation=tf.nn.relu, name="shorcut_connect")
+        concat_layer = tf.add(tf.reshape(output, shape=(250, 1024)), shortcut_connect)
+        concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
+        logits = tf.layers.dense(inputs=concat_dropout, units=5, name="seq_logits")
 
 
     predictions = {
@@ -201,20 +224,21 @@ def representation_learner_fn(features, labels, mode, params):
     # Input Layer (batch_size * feature_size)
     input_layer = features['x']
 
-    # CNN Portion (small and large filters)
-    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
-    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
+    with tf.variable_scope("rep_scope"):
+        # CNN Portion (small and large filters)
+        small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
+        large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
 
-    # Concatenate results of both CNNs
-    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
-    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
+        # Concatenate results of both CNNs
+        cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
+        cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
 
-    # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
-    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
+        # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
+        flat_layer = tf.layers.flatten(inputs=cnn_dropout)
 
-    # Softmax layer only used in pretraining, the weights to this layer are dropped after training
-    # Size is now (batch_size * 5)
-    logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits')
+        # Softmax layer only used in pretraining, the weights to this layer are dropped after training
+        # Size is now (batch_size * 5)
+        logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits')
 
     predictions = {
         'classes': tf.argmax(logits, axis=1),
@@ -247,61 +271,6 @@ def representation_learner_fn(features, labels, mode, params):
     )
 
 
-def finetune_fn(features, labels, mode):
-    """
-    Train the entire DeepSleepNet model using the parameters learned in the pretraining phase.
-    :param features:
-    :param labels:
-    :param mode:
-    :return:
-    """
-    input_layer = features['x']
-    print(input_layer)
-    sampling_rate = 100  # features['fs']
-
-    # CNN Portion (small and large filters)
-    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
-    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
-    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
-    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5)
-
-    # Flatten tensor of shape (batch_size, out_width, out_channels) to (batch_size, out_width * out_channels)
-    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
-
-    # Bidirectional LSTM Portion (with shortcut connect)
-    seq_learn_out = sequence_residual_learner(inputs=flat_layer)
-    shortcut_connect = tf.layers.dense(inputs=flat_layer, units=1024, activation=tf.nn.relu)
-    concat_layer = tf.add(seq_learn_out, shortcut_connect)
-    concat_dropout = tf.layers.dropout(concat_layer, rate=0.5)
-    output_layer = tf.layers.dense(inputs=concat_dropout, units=5)
-
-    predictions = {
-        'classes': tf.argmax(output_layer, axis=1),
-        'predictions': tf.nn.softmax(output_layer, name='softmax_tensor')
-    }
-
-    if mode == tf.estimator.ModeKeys.PREDICT:
-        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
-
-    # Calculate Loss
-    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=output_layer)
-
-    # Configure the Training Op (for TRAIN mode)
-    if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        train_op = optimizer.minimize(
-            loss=loss,
-            global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
-
-    # Add evaluation metrics (for EVAL mode)
-    eval_metric_ops = {
-        "accuracy": tf.metrics.accuracy(
-            labels=labels, predictions=predictions["classes"])}
-    return tf.estimator.EstimatorSpec(
-        mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
-
-
 def load_data():
     train_files = glob.glob('../../data/existing_solution/prepared_data/SC4*.npz')
     X = []
@@ -315,6 +284,56 @@ def load_data():
         sampling_rate = data['fs']
 
     return np.vstack(X), np.hstack(Y), sampling_rate
+
+
+def load_seq_data():
+    train_files = glob.glob('../../data/existing_solution/prepared_data/SC4*.npz')
+    X = []
+    Y = []
+    sampling_rate = 0
+
+    for f in train_files:
+        data = np.load(f)
+        X.append(np.squeeze(data['x']))
+        Y.append(data['y'])
+        sampling_rate = data['fs']
+
+    return X, Y, sampling_rate
+
+
+def make_fold_seq(data, labels, k, fold_size, num_examples):
+    train_fold_start = k * fold_size
+    train_fold_end = ((k + 19) * fold_size) % num_examples
+    eval_fold_end = ((k + 20) * fold_size) % num_examples
+
+    train_data = data[train_fold_start: train_fold_end]
+    train_labels = labels[train_fold_start: train_fold_end]
+    eval_data = data[train_fold_end: eval_fold_end]
+    eval_labels = labels[train_fold_end: eval_fold_end]
+
+    return train_data, train_labels, eval_data, eval_labels
+
+
+def make_seq_data(data, labels, batch_size, seq_len):
+    batch_len = data.shape[0] // batch_size
+    epoch_len = batch_len // seq_len
+
+    # (batch_size, batch_len, 3000, 1)
+    seq_data = np.zeros((batch_size, batch_len) + data.shape[1:], dtype=data.dtype)
+    # (batch_size, batch_len, 1, 1)
+    seq_labels = np.zeros((batch_size, batch_len) + labels.shape[1:], dtype=labels.dtype)
+
+    for i in range(batch_size):
+        seq_data[i] = data[i * batch_len: (i+1) * batch_len]
+        seq_labels[i] = labels[i * batch_len: (i + 1) * batch_len]
+
+    X = []
+    Y = []
+    for i in range(epoch_len):
+        X.append(seq_data[:, i * seq_len: (i+1) * seq_len].reshape((-1, ) + data.shape[1:]))
+        Y.append(seq_labels[:, i * seq_len: (i + 1) * seq_len].reshape((-1, ) + labels.shape[1:]))
+
+    return X, Y
 
 
 def main(argv):
@@ -411,9 +430,24 @@ def main(argv):
     """
     # ******** Fine-tune DeepSleepNet Model ********
 
+    data, labels, sampling_rate = load_seq_data()
+
     # Finetuner Hyperparameters
     finetuner_params = {
         "learn_rate": 0.000001,
+        "fs": sampling_rate
+    }
+
+    # Finetuner Model
+    finetuner = tf.estimator.Estimator(
+        model_fn=representation_learner_fn,
+        model_dir="/tmp/rep_learn_model",
+        params=finetuner_params
+    )
+
+    # Sequential Learner Hyperparameters
+    seq_learner_params = {
+        "learn_rate": 0.0001,
         "fs": sampling_rate
     }
 
@@ -422,67 +456,72 @@ def main(argv):
     seq_learner = tf.estimator.Estimator(
         model_fn=sequence_residual_learner_fn,
         model_dir="/tmp/rep_learn_model",
-        params=finetuner_params
+        params=seq_learner_params
     )
 
-    k = 0
-    for train_idx, res_idx in folds.split(fold_data):
+    # manually perform k-fold (data is list of tensors)
+    num_examples = len(data)
+    fold_size = num_examples // 20
+
+
+    for k in range(20):
 
         # Define Fold
-        train_data = fold_data[train_idx]
-        train_labels = fold_labels[train_idx]
-        eval_data = fold_data[res_idx]
-        eval_labels = fold_labels[res_idx]
+        train_data, train_labels, eval_data, eval_labels = make_fold_seq(data, labels, k, fold_size, num_examples)
 
         # resets state parameters of LSTM when training on different subjects
         for i in range(len(train_data)):
             # Split each input into 10 equal-length subsequences
-            splits = np.reshape(train_data[i], (1, 3000))
-            label = np.repeat(train_labels[i], 1)
-            """
-            # Train the model
-            train_finetune_fn = tf.estimator.inputs.numpy_input_fn(
-                x={"x": splits},
-                y=label,
-                batch_size=1,
-                num_epochs=None,
+            seq_data, seq_labels = make_seq_data(train_data[i], train_labels[i], batch_size=10, seq_len=25)
+
+            for j in range(len(seq_data)):
+
+                print(seq_data[j].shape)
+
+                # Train the model
+                train_finetune_fn = tf.estimator.inputs.numpy_input_fn(
+                    x={"x": seq_data[j]},
+                    y=seq_labels[j],
+                    batch_size=250,
+                    num_epochs=None,
+                    shuffle=False
+                )
+
+                # Finetune the Representation Learner
+                finetuner.train(
+                    input_fn=train_finetune_fn,
+                    max_steps=1,
+                    hooks=[logging_hook]
+                )
+
+                train_seq_res_fn = tf.estimator.inputs.numpy_input_fn(
+                    x={"x": seq_data[j]},
+                    y=seq_labels[j],
+                    batch_size=250,
+                    num_epochs=None,
+                    shuffle=False
+                )
+
+                # Train the Sequential Learner Using the Finetuned Representation Learner
+                seq_learner.train(
+                    input_fn=train_seq_res_fn,
+                    steps=1,
+                    hooks=[logging_hook]
+                )
+
+        for i in range(len(eval_data)):
+            # Evaluate the model and print results
+            eval_finetune_fn = tf.estimator.inputs.numpy_input_fn(
+                x={"x": eval_data},
+                y=eval_labels,
+                num_epochs=1,
                 shuffle=False
             )
+            eval_results = seq_learner.evaluate(input_fn=eval_finetune_fn)
 
-            learned_feats = finetuner.train(
-                input_fn=train_finetune_fn,
-                max_steps=1,
-                hooks=[logging_hook]
-            )
-            """
-
-            train_seq_res_fn = tf.estimator.inputs.numpy_input_fn(
-                x={"x": splits},
-                y=label,
-                batch_size=10,
-                num_epochs=None,
-                shuffle=False
-            )
-
-            seq_learner.train(
-                input_fn=train_seq_res_fn,
-                steps=1,
-                hooks=[logging_hook]
-            )
-
-        #for i in range(len(eval_data)):
-        # Evaluate the model and print results
-        eval_finetune_fn = tf.estimator.inputs.numpy_input_fn(
-            x={"x": eval_data},
-            y=eval_labels,
-            num_epochs=1,
-            shuffle=False
-        )
-        eval_results = seq_learner.evaluate(input_fn=eval_finetune_fn)
-
-            #if i % 100 == 0:
-        print("Results of fold {}:".format(k))
-        print(eval_results)
+            if i % 100 == 0:
+                print("Results of fold {}:".format(k))
+                print(eval_results)
 
         k = k + 1
 
@@ -493,7 +532,7 @@ def main(argv):
         num_epochs=1,
         shuffle=False
     )
-    raw_predictions = finetuner.predict(input_fn=test_finetune_fn)
+    raw_predictions = seq_learner.predict(input_fn=test_finetune_fn)
     predictions = [p['classes'] for p in raw_predictions]
     con_mat = tf.confusion_matrix(labels=list(test_labels), predictions=list(predictions))
     with tf.Session() as sess:
