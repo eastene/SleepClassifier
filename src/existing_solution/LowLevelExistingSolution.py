@@ -8,21 +8,24 @@ from imblearn.over_sampling import RandomOverSampler
 
 
 tf.logging.set_verbosity(tf.logging.INFO)
-tf.flags.DEFINE_integer("num_parallel_readers", 1, "number of parallel I/O threads")
-tf.flags.DEFINE_integer("shuffle_buffer_size", 3, "size (in batches) of in-memory buffer for dataset shuffling")
+tf.flags.DEFINE_integer("num_parallel_readers", 8, "number of parallel I/O threads")
+tf.flags.DEFINE_integer("shuffle_buffer_size", 100, "size (in batches) of in-memory buffer for dataset shuffling")
 tf.flags.DEFINE_integer("batch_size", 100, "batch size")
 tf.flags.DEFINE_integer("num_parallel_calls", 8, "number of parallel dataset parsing threads "
                                                 "(recommended to be equal to number of CPU cores")
-tf.flags.DEFINE_integer("prefetch_buffer_size", 3, "size (in batches) of in-memory buffer to prefetch records before parsing")
-tf.flags.DEFINE_integer("num_epochs_pretrain", 100, "number of epochs for pre-training")
+tf.flags.DEFINE_integer("prefetch_buffer_size", 100, "size (in batches) of in-memory buffer to prefetch records before parsing")
+tf.flags.DEFINE_integer("num_epochs_pretrain", 1, "number of epochs for pre-training")
 tf.flags.DEFINE_integer("num_epochs_finetune", 1, "number of epochs for fine tuning")
+tf.flags.DEFINE_string("checkpoint_dir_reuse", "/tmp/existing_model_reuse",
+                       "directory in which to save model parameters from pretraining that are reused in finetuning while training")
+tf.flags.DEFINE_string("checkpoint_dir", "/tmp/existing_model", "directory in which to save model parameters while training")
 
 FLAGS = tf.flags.FLAGS
 INPUT_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC*.tfrecord"
 
 """
 *
-* INPUT PIPELINE
+* vv INPUT PIPELINE
 *
 """
 
@@ -52,10 +55,8 @@ def input_fn():
 
     dataset = dataset.cache()
 
-    # shuffle data and repeat (if num epochs > 1)
-    dataset = dataset.apply(
-        tf.contrib.data.shuffle_and_repeat(buffer_size=FLAGS.shuffle_buffer_size)
-    )
+    # shuffle data
+    dataset = dataset.shuffle(buffer_size=FLAGS.shuffle_buffer_size)
 
     # parse the data and prepares the batches in parallel (helps most with larger batches)
     dataset = dataset.apply(
@@ -69,6 +70,12 @@ def input_fn():
     dataset = dataset.prefetch(buffer_size=FLAGS.prefetch_buffer_size)
 
     return dataset
+
+"""
+*
+* ^^ INPUT PIPELINE
+*
+"""
 
 
 def representation_learner(data, sampling_rate, mode, use_small_filter=True):
@@ -162,27 +169,39 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
     return pool_2
 
 
+def split_input(next_element):
+    return next_element[0], next_element[1], next_element[2]
+
+
 def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     # hyper-parameters
     n_folds = 20
     fold_test_split = 0.1
     learn_rate = 0.0001
-    sampling_rate = 100
+    sampling_rate = 100.00
+
+    # batch iterator
+    dataset_iter = input_fn().make_initializable_iterator()
+    next_elem = dataset_iter.get_next()
 
     # inputs
-    x = tf.placeholder(shape=(100, 1, 3000), dtype=tf.float32)
-    y = tf.placeholder(dtype=tf.int32)
-    fs = tf.placeholder(dtype=tf.int32)
-    sampling_rate = fs.eval()
+    #TODO change fs to sampling_rate
+    x, y, fs = split_input(next_elem)
 
     # define model
     input_layer = tf.reshape(x, [-1, 3000, 1])
+    #with tf.name_scope("REP_LEARN") as scope:
+    # Shared parameters
     small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
     large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
     cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
     cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
     flat_layer = tf.layers.flatten(inputs=cnn_dropout)
-    logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits')
+    logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits', reuse=tf.AUTO_REUSE)
+    save_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+
+    # saver
+    saver = tf.train.Saver()
 
     # define model trainer
     loss = tf.losses.sparse_softmax_cross_entropy(labels=y, logits=logits)
@@ -199,37 +218,40 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     # define initialisation operator
     init_op = tf.global_variables_initializer()
 
-    # batch iterator
-    dataset_iter = input_fn().make_initializable_iterator()
-    next_elem = dataset_iter.get_next()
+
 
     with tf.Session() as sess:
-        # initialize
-        sess.run(init_op)
-        sess.run(dataset_iter.initializer)
+        print(sess.run(save_list))
 
-        train_data_size = 20
+        # initialize or restore
+        if tf.train.checkpoint_exists(FLAGS.checkpoint_dir):
+            saver.restore(sess, FLAGS.checkpoint_dir)
+            print("Model restored.")
+        else:
+            sess.run(init_op)
 
+        # PRETRAINING LOOP
         for epoch in range(FLAGS.num_epochs_pretrain):
-            avg_cost = 0.0
-            for batch in range(train_data_size):
-                dataset = sess.run(next_elem)  # list of [signal, label, sampling_rate]
+            sess.run(dataset_iter.initializer)
+            cost = 0.0
+            n_batches = 0
 
-                feed_dict = {
-                    x: dataset[0],
-                    y: dataset[1],
-                    fs: dataset[2]
-                }
+            try:
+                while True:
+                    _, c = sess.run(
+                        [train_op, loss]
+                    )
 
-                _, c = sess.run(
-                    [train_op, loss],
-                    feed_dict=feed_dict
-                )
+                    cost += c
+                    n_batches += 1
+            except tf.errors.OutOfRangeError:
+                pass  # reached end of epoch
 
-                avg_cost += c / train_data_size
+            if epoch % 3 == 0:
+                print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
+                save_path = saver.save(sess, FLAGS.checkpoint_dir_reuse)
+                print("Model saved in path: {}".format(save_path))
 
-                if epoch % 3 == 0 and batch == 0:
-                    print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(avg_cost))
     """
         data, labels, fs = load_data()
         r = data.shape[0]
@@ -305,8 +327,76 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
         print('Confusion Matrix: \n\n', tf.Tensor.eval(con_mat, feed_dict=None, session=None))
         """
 
+def fine_tune(mode=tf.estimator.ModeKeys.TRAIN):
+    # hyper-parameters
+    n_folds = 20
+    fold_test_split = 0.1
+    learn_rate = 0.000001
+    sampling_rate = 100.00
+
+    # batch iterator
+    dataset_iter = input_fn().make_initializable_iterator()
+    next_elem = dataset_iter.get_next()
+
+    # inputs
+    # TODO change fs to sampling_rate
+    x, y, fs = split_input(next_elem)
+
+    # define model
+    input_layer = tf.reshape(x, [-1, 3000, 1])
+    small_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=True)
+    large_filter_cnn = representation_learner(input_layer, sampling_rate, mode, use_small_filter=False)
+    cnn_output = tf.concat([small_filter_cnn, large_filter_cnn], axis=1)
+    cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
+    flat_layer = tf.layers.flatten(inputs=cnn_dropout)
+    logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits', reuse=tf.AUTO_REUSE)
+
+    # define model trainer
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=y, logits=logits)
+    optimiser = tf.train.AdamOptimizer(learning_rate=learn_rate, beta1=0.9, beta2=0.999, name="adam_finetune_rep")
+    train_op = optimiser.minimize(loss, global_step=tf.train.get_global_step())
+
+    # define model evaluator
+    correct_classes = tf.equal(tf.cast(y, tf.int64), tf.argmax(logits, axis=1))
+    eval_op = tf.reduce_mean(tf.cast(correct_classes, tf.float32))
+
+    # define model predictor
+    pred_classes = tf.argmax(logits, axis=1)
+
+    # define initialisation operator
+    init_op = tf.global_variables_initializer()
+
+    # saver
+    saver = tf.train.Saver()
+
+    # FINETUNING LOOP
+    with tf.Session() as sess:
+
+        for epoch in range(FLAGS.num_epochs_pretrain):
+            sess.run(dataset_iter.initializer)
+            cost = 0.0
+            n_batches = 0
+
+            try:
+                while True:
+                    _, c = sess.run(
+                        [train_op, loss]
+                    )
+
+                    cost += c
+                    n_batches += 1
+            except tf.errors.OutOfRangeError:
+                pass  # reached end of epoch
+
+            if epoch % 3 == 0:
+                print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
+                save_path = saver.save(sess, FLAGS.checkpoint_dir)
+                print("Model saved in path: {}".format(save_path))
+
+
 def main(unused_argv):
     pretrain(tf.estimator.ModeKeys.TRAIN)
+    fine_tune(tf.estimator.ModeKeys.TRAIN)
 
 
 if __name__ == "__main__":

@@ -338,6 +338,10 @@ def make_seq_data(data, labels, batch_size, seq_len):
 
 def main(argv):
 
+    # TODO: restore checkpointing
+    # turn off checkpointing
+    no_chkpt_run_config = tf.estimator.RunConfig(save_checkpoints_secs=None, save_checkpoints_steps=None)
+
     # ******** Pretrain Representation Learning Model ********
 
     # Load dataset
@@ -365,7 +369,8 @@ def main(argv):
     pretrainer = tf.estimator.Estimator(
         model_fn=representation_learner_fn,
         model_dir="/tmp/rep_learn_model",
-        params=pretrainer_params
+        params=pretrainer_params,
+        config=no_chkpt_run_config
     )
     # Set up logging for predictions
     tensors_to_log = {"probabilities": "softmax_tensor"}
@@ -442,7 +447,8 @@ def main(argv):
     finetuner = tf.estimator.Estimator(
         model_fn=representation_learner_fn,
         model_dir="/tmp/rep_learn_model",
-        params=finetuner_params
+        params=finetuner_params,
+        config=no_chkpt_run_config
     )
 
     # Sequential Learner Hyperparameters
@@ -456,7 +462,8 @@ def main(argv):
     seq_learner = tf.estimator.Estimator(
         model_fn=sequence_residual_learner_fn,
         model_dir="/tmp/rep_learn_model",
-        params=seq_learner_params
+        params=seq_learner_params,
+        config=no_chkpt_run_config
     )
 
     # manually perform k-fold (data is list of tensors)
@@ -475,8 +482,6 @@ def main(argv):
             seq_data, seq_labels = make_seq_data(train_data[i], train_labels[i], batch_size=10, seq_len=25)
 
             for j in range(len(seq_data)):
-
-                print(seq_data[j].shape)
 
                 # Train the model
                 train_finetune_fn = tf.estimator.inputs.numpy_input_fn(
