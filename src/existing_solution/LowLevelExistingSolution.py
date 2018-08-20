@@ -14,14 +14,17 @@ tf.flags.DEFINE_integer("batch_size", 100, "batch size")
 tf.flags.DEFINE_integer("num_parallel_calls", 8, "number of parallel dataset parsing threads "
                                                 "(recommended to be equal to number of CPU cores")
 tf.flags.DEFINE_integer("prefetch_buffer_size", 100, "size (in batches) of in-memory buffer to prefetch records before parsing")
-tf.flags.DEFINE_integer("num_epochs_pretrain", 1, "number of epochs for pre-training")
+tf.flags.DEFINE_integer("num_epochs_pretrain", 40, "number of epochs for pre-training")
 tf.flags.DEFINE_integer("num_epochs_finetune", 1, "number of epochs for fine tuning")
-tf.flags.DEFINE_string("checkpoint_dir_reuse", "/tmp/existing_model_reuse",
+tf.flags.DEFINE_string("checkpoint_dir_reuse", "/tmp/existing_model_reuse/",
                        "directory in which to save model parameters from pretraining that are reused in finetuning while training")
-tf.flags.DEFINE_string("checkpoint_dir", "/tmp/existing_model", "directory in which to save model parameters while training")
+tf.flags.DEFINE_string("checkpoint_dir", "/tmp/existing_model/", "directory in which to save model parameters while training")
 
 FLAGS = tf.flags.FLAGS
-INPUT_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC*.tfrecord"
+TRAIN_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC40*.tfrecord"
+EVAL_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC41[0-7]*.tfrecord"
+TEST_FILE_PATTERN = "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_tf/SC41[8-9]*.tfrecord"
+
 
 """
 *
@@ -43,8 +46,8 @@ def sleep_data_parse_fn(example):
     return parsed['signal'], parsed['label'], parsed['sampling_rate']
 
 
-def input_fn():
-    files = tf.data.Dataset.list_files(file_pattern=INPUT_FILE_PATTERN, shuffle=False)
+def input_fn(file_pattern):
+    files = tf.data.Dataset.list_files(file_pattern=file_pattern, shuffle=False)
 
     # interleave reading of dataset for parallel I/O
     dataset = files.apply(
@@ -107,7 +110,7 @@ def representation_learner(data, sampling_rate, mode, use_small_filter=True):
     input_layer = tf.reshape(data, [-1, 3000, 1])
 
     # Conv Layer 1
-    batch_normalizer = tf.layers.batch_normalization(input_layer,epsilon=1e-5)
+    batch_normalizer = tf.layers.batch_normalization(input_layer, epsilon=1e-5)
     l2_regulizer = l2_regularizer(0.001)
     conv_1 = tf.layers.conv1d(
         inputs=batch_normalizer,
@@ -180,13 +183,17 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     learn_rate = 0.0001
     sampling_rate = 100.00
 
-    # batch iterator
-    dataset_iter = input_fn().make_initializable_iterator()
-    next_elem = dataset_iter.get_next()
+    # train batch iterator
+    train_iter = input_fn(TRAIN_FILE_PATTERN).make_initializable_iterator()
+    next_train_elem = train_iter.get_next()
+
+    # eval batch iterator
+    eval_iter = input_fn(EVAL_FILE_PATTERN).make_initializable_iterator()
+    next_eval_elem = eval_iter.get_next()
 
     # inputs
-    #TODO change fs to sampling_rate
-    x, y, fs = split_input(next_elem)
+    x = tf.placeholder(dtype=tf.float32)
+    y = tf.placeholder(dtype=tf.int32)
 
     # define model
     input_layer = tf.reshape(x, [-1, 3000, 1])
@@ -198,10 +205,6 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     cnn_dropout = tf.layers.dropout(cnn_output, rate=0.5, training=mode == tf.estimator.ModeKeys.TRAIN)
     flat_layer = tf.layers.flatten(inputs=cnn_dropout)
     logits = tf.layers.dense(inputs=flat_layer, units=5, name='logits', reuse=tf.AUTO_REUSE)
-    save_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-
-    # saver
-    saver = tf.train.Saver()
 
     # define model trainer
     loss = tf.losses.sparse_softmax_cross_entropy(labels=y, logits=logits)
@@ -218,11 +221,11 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
     # define initialisation operator
     init_op = tf.global_variables_initializer()
 
-
+    # saver
+    save_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
+    saver = tf.train.Saver()
 
     with tf.Session() as sess:
-        print(sess.run(save_list))
-
         # initialize or restore
         if tf.train.checkpoint_exists(FLAGS.checkpoint_dir):
             saver.restore(sess, FLAGS.checkpoint_dir)
@@ -230,16 +233,23 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
         else:
             sess.run(init_op)
 
-        # PRETRAINING LOOP
+        # PRETRAINING TRAIN LOOP
         for epoch in range(FLAGS.num_epochs_pretrain):
-            sess.run(dataset_iter.initializer)
+            sess.run(train_iter.initializer)
             cost = 0.0
             n_batches = 0
 
             try:
                 while True:
+                    data = sess.run(next_train_elem)
+                    feed_dict={
+                        x: data[0],
+                        y: data[1]
+                    }
+
                     _, c = sess.run(
-                        [train_op, loss]
+                        [train_op, loss],
+                        feed_dict=feed_dict
                     )
 
                     cost += c
@@ -249,8 +259,36 @@ def pretrain(mode=tf.estimator.ModeKeys.TRAIN):
 
             if epoch % 3 == 0:
                 print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
-                save_path = saver.save(sess, FLAGS.checkpoint_dir_reuse)
+                save_path = saver.save(sess, FLAGS.checkpoint_dir)
                 print("Model saved in path: {}".format(save_path))
+
+        # PRETRAINING EVAL LOOP
+        m_tot = 0
+        n_batches = 0
+        #for epoch in range(FLAGS.num_epochs_pretrain):
+        sess.run(eval_iter.initializer)
+
+        # Evaluate
+        try:
+            while True:
+                data = sess.run(next_eval_elem)
+                feed_dict={
+                    x: data[0],
+                    y: data[1]
+                }
+
+                m = sess.run(
+                    [eval_op],
+                    feed_dict=feed_dict
+                )
+                n_batches += 1
+                m_tot += m[0]
+
+        except tf.errors.OutOfRangeError:
+            pass  # reached end of epoch
+
+        print("Pretraining Accuracy: {}".format(m_tot / n_batches))
+
 
     """
         data, labels, fs = load_data()
@@ -396,7 +434,7 @@ def fine_tune(mode=tf.estimator.ModeKeys.TRAIN):
 
 def main(unused_argv):
     pretrain(tf.estimator.ModeKeys.TRAIN)
-    fine_tune(tf.estimator.ModeKeys.TRAIN)
+    #fine_tune(tf.estimator.ModeKeys.TRAIN)
 
 
 if __name__ == "__main__":
