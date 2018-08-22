@@ -186,9 +186,7 @@ class RepresentationLearner:
         """
         Save & Restore
         """
-        # TODO change to use only 1 saver
-        self.rep_saver = tf.train.Saver() #tf.train.Saver(var_list=self.rep_list)  # saves only reused layers
-        self.gen_saver = tf.train.Saver()  # saves entire model
+        self.saver = tf.train.Saver()  # saves entire model
 
     def pretrain(self, sess, data):
         self.learning_rate = 0.0001
@@ -222,34 +220,16 @@ class RepresentationLearner:
 
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner
-        save_path = self.rep_saver.save(sess, self.rep_learn_dir)
-        print("Representation Learner saved to: {}".format(save_path))
-        save_path = self.gen_saver.save(sess, self.gen_dir)
-        print("Pretrainer model saved to: {}".format(save_path))
-
-    def checkpoint_representation_learner(self, sess):
-        # checkpoint only representation learner
-        save_path = self.rep_saver.save(sess, self.rep_learn_dir)
+        save_path = self.saver.save(sess, self.rep_learn_dir)
         print("Representation Learner saved to: {}".format(save_path))
 
-    def restore_representation_learner(self, sess):
+    def restore(self, sess):
         if tf.train.checkpoint_exists(self.rep_learn_dir):
-            self.rep_saver.restore(sess, self.rep_learn_dir)  # restore only rep learner model
+            self.saver.restore(sess, self.rep_learn_dir)  # restore only rep learner model
             print("Representation Learner restored.")
         else:
             raise tf.errors.NotFoundError(
-                node_def=self.rep_saver,
-                op=self.rep_saver.restore,
+                node_def=self.saver,
+                op=self.saver.restore,
                 message="No Representation Learner found at: {}".format(self.rep_learn_dir)
-            )
-
-    def restore_pretrainer(self, sess):
-        if tf.train.checkpoint_exists(self.gen_dir):
-            self.rep_saver.restore(sess, self.gen_dir)  # restore entire model
-            print("Pretrainer model restored.")
-        else:
-            raise tf.errors.NotFoundError(
-                node_def=self.gen_saver,
-                op=self.gen_saver.restore,
-                message="No existing Pretrainer model found at: {}".format(self.gen_dir)
             )

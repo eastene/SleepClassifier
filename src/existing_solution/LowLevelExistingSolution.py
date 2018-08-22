@@ -35,7 +35,7 @@ def pretrain():
     with tf.Session() as sess:
         # initialize or restore
         try:
-            rep_learn.restore_pretrainer(sess)
+            rep_learn.restore(sess)
         except tf.errors.NotFoundError:
             sess.run(init_op)
 
@@ -86,7 +86,7 @@ def pretrain():
                 sess.run(init_op)
 
             try:
-                rep_learn.restore_representation_learner(sess)
+                rep_learn.restore(sess)
             except tf.errors.NotFoundError:
                 sess.run(init_op)
 
@@ -108,7 +108,7 @@ def pretrain():
 
                 if epoch % 3 == 0:
                     print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
-                    rep_learn.checkpoint_representation_learner(sess)
+                    rep_learn.checkpoint(sess)
 
 """
         # Test after all epochs
