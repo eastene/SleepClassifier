@@ -7,7 +7,6 @@ import os
 DATA_DIR = '/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_data/'
 FILE_PATTERN = DATA_DIR + '*.npz'
 
-
 npz_files = glob(FILE_PATTERN)
 
 for f in npz_files:

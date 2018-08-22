@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
+from tensorflow.contrib.rnn import stack_bidirectional_dynamic_rnn, LSTMCell, DropoutWrapper
 from os import path
 
 from src.existing_solution.flags import FLAGS
@@ -23,8 +23,8 @@ class SequenceResidualLearner:
         self.x = tf.placeholder(dtype=tf.float32, shape=(None, 2816))
         self.y = tf.placeholder(dtype=tf.int32)
 
-        self.input_seqs = tf.split(self.x, num_or_size_splits=25, axis=0)
-        self.batch_size = tf.shape(self.input_seqs[0])[0]
+        self.input_seqs = tf.reshape(self.x, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
+        self.batch_size = FLAGS.sequence_batch_size
 
         """
         Bi-Directional LSTM
@@ -42,7 +42,7 @@ class SequenceResidualLearner:
         # states are dropped after training on each sample so that the states from
         # one sample does not influence those of another
         # TODO fix out of memory error on GPU
-        self.bd_lstm, self.state_fw, self.state_bw = stack_bidirectional_rnn(
+        self.bd_lstm, self.state_fw, self.state_bw = stack_bidirectional_dynamic_rnn(
             inputs=self.input_seqs,
             cells_fw=[self.lstm_dropout] * self.num_lstm_layer,
             cells_bw=[self.lstm_dropout] * self.num_lstm_layer,
@@ -62,7 +62,7 @@ class SequenceResidualLearner:
 
         self.shortcut_connect = tf.layers.dense(inputs=self.batch_normalizer, units=1024, activation=tf.nn.relu,
                                                 name="shorcut_connect")
-        self.output_layer = tf.add(tf.reshape(self.bd_lstm, shape=(FLAGS.batch_size, 1024)), self.shortcut_connect)
+        self.output_layer = tf.add(tf.reshape(self.bd_lstm, shape=(250, 1024)), self.shortcut_connect)
         self.dropout = tf.layers.dropout(self.output_layer, rate=0.5)
         self.logits = tf.layers.dense(inputs=self.dropout, units=5, name="seq_logits")
         # End Define Model
@@ -104,18 +104,24 @@ class SequenceResidualLearner:
         }
         return sess.run([self.eval_op], feed_dict=feed_dict)
 
+    def predict(self, sess, rep_learn_output):
+        feed_dict={
+            self.x: rep_learn_output
+        }
+        return sess.run([self.pred_classes], feed_dict=feed_dict)
+
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner
         save_path = self.saver.save(sess, self.seq_learn_dir)
-        print("Representation Learner saved to: {}".format(save_path))
+        print("Sequential Residual Learner saved to: {}".format(save_path))
 
     def restore(self, sess):
         if tf.train.checkpoint_exists(self.seq_learn_dir):
             self.saver.restore(sess, self.seq_learn_dir)  # restore only rep learner model
-            print("Sequential Representation Learner restored.")
+            print("Sequential Residual Learner restored.")
         else:
             raise tf.errors.NotFoundError(
                 node_def=self.saver,
                 op=self.saver.restore,
-                message="No existing Sequential Representation Learner found at: {}".format(self.seq_learn_dir)
+                message="No existing Sequential Residual Learner found at: {}".format(self.seq_learn_dir)
             )

@@ -204,7 +204,7 @@ class RepresentationLearner:
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.train_op, self.output_layer, self.y], feed_dict=feed_dict)
+        return sess.run([self.train_op, self.output_layer], feed_dict=feed_dict)
 
     def eval(self, sess, data):
         self.mode = "EVAL"
@@ -213,6 +213,15 @@ class RepresentationLearner:
             self.y: data[1]
         }
         return sess.run([self.eval_op], feed_dict=feed_dict)
+
+    def eval_finetune(self, sess, data):
+        # run to generate output without classifying
+        self.mode = "EVAL"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
+        return sess.run([self.output_layer], feed_dict=feed_dict)
 
     def predict(self, sess, feed_dict):
         self.mode = "PREDICT"
