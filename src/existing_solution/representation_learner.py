@@ -48,7 +48,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 1
-        self.pool_1_large = tf.layers.max_pooling1d(inputs=self.conv_1_large, pool_size=4, strides=4)
+        self.pool_1_large = tf.layers.max_pooling1d(inputs=self.conv_1_large, pool_size=4, strides=4, padding="SAME")
 
         # Dropout
         self.dropout_large = tf.layers.dropout(inputs=self.pool_1_large, rate=0.5, training=self.mode == "TRAIN")
@@ -90,7 +90,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 2
-        self.pool_2_large = tf.layers.max_pooling1d(inputs=self.conv_4_large, pool_size=2, strides=2)
+        self.pool_2_large = tf.layers.max_pooling1d(inputs=self.conv_4_large, pool_size=2, strides=2, padding="SAME")
 
         """
         Fine-Grain Convolutional Layer
@@ -109,7 +109,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 1
-        self.pool_1_small = tf.layers.max_pooling1d(inputs=self.conv_1_small, pool_size=8, strides=8)
+        self.pool_1_small = tf.layers.max_pooling1d(inputs=self.conv_1_small, pool_size=8, strides=8, padding="SAME")
 
         # Dropout
         self.dropout_small = tf.layers.dropout(inputs=self.pool_1_small, rate=0.5, training=self.mode == "TRAIN")
@@ -151,7 +151,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 2
-        self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=4, strides=4)
+        self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=4, strides=4, padding="SAME")
 
         """
         CNN Output Layer

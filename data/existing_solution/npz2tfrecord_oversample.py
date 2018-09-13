@@ -4,7 +4,7 @@ from glob import glob
 import ntpath
 import os
 
-from imblearn.over_sampling import SMOTE
+from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import train_test_split
 
 DATA_DIR = '/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_data/'
@@ -26,7 +26,7 @@ for f in npz_files:
 
 X, Y = np.vstack(X), np.hstack(Y)
 print("Pre Oversampling Label Counts {}".format(np.bincount(Y)))
-smt = SMOTE()
+smt = RandomOverSampler()
 X_os, Y_os = smt.fit_sample(X, Y)
 print("Post Oversampling Label Counts {}".format(np.bincount(Y_os)))
 

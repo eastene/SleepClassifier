@@ -14,41 +14,59 @@ class SequenceResidualLearner:
         # Hyperparameters
         self.learning_rate = 0.0001
         self.lstm_size = 512
-        self.num_lstm_layer = 1
+        self.num_lstm_layer = 2
 
         # Begin Define Model
         """
         Input Layer
         """
-        self.x = tf.placeholder(dtype=tf.float32, shape=(None, 2816))
+        self.x = tf.placeholder(dtype=tf.float32, shape=(None, 3072))
         self.y = tf.placeholder(dtype=tf.int32)
 
-        self.input_seqs = tf.reshape(self.x, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
+        self.input_seqs = tf.reshape(self.x, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 3072))
         self.batch_size = FLAGS.sequence_batch_size
 
         """
         Bi-Directional LSTM
         """
         # Bidirectional LSTM Cell
-        self.lstm_cell = LSTMCell(self.lstm_size)
-
+        # for some reason, the 2 layers of the bidirectional lstm will not work without explicitly enumerating each layer
+        # TODO: make this a loop? or use a different method to create 2 layers
+        self.fw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.bw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.fw_lstm_cell_2 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.bw_lstm_cell_2 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
         # Dropout Between Layers
-        self.lstm_dropout = DropoutWrapper(self.lstm_cell, input_keep_prob=0.5, output_keep_prob=0.5,
+        self.fw_lstm_cell_1 = DropoutWrapper(self.fw_lstm_cell_1, input_keep_prob=0.5, output_keep_prob=0.5,
                                            state_keep_prob=0.5)
+        self.bw_lstm_cell_1 = DropoutWrapper(self.bw_lstm_cell_1, input_keep_prob=0.5, output_keep_prob=0.5,
+                                           state_keep_prob=0.5)
+        self.fw_lstm_cell_2 = DropoutWrapper(self.fw_lstm_cell_2, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
+        self.bw_lstm_cell_2 = DropoutWrapper(self.bw_lstm_cell_2, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
 
         # 2-Layered Bidirectional LSTM
-        self.initial_states = self.lstm_dropout.zero_state(self.batch_size, dtype=tf.float32)
+        self.fw_cell = tf.nn.rnn_cell.MultiRNNCell([self.fw_lstm_cell_1, self.fw_lstm_cell_2],
+                                              state_is_tuple=True)
+        self.bw_cell = tf.nn.rnn_cell.MultiRNNCell([self.bw_lstm_cell_1, self.bw_lstm_cell_2],
+                                              state_is_tuple=True)
+
+        self.initial_states_fw = self.fw_cell.zero_state(self.batch_size, dtype=tf.float32)
+        self.initial_states_bw = self.bw_cell.zero_state(self.batch_size, dtype=tf.float32)
 
         # states are dropped after training on each sample so that the states from
         # one sample does not influence those of another
-        # TODO fix out of memory error on GPU
-        self.bd_lstm, self.state_fw, self.state_bw = stack_bidirectional_dynamic_rnn(
+        # dynamic RNN chosen to train on GPUs with smaller memories
+        self.bd_lstm, self.states = tf.nn.bidirectional_dynamic_rnn(
             inputs=self.input_seqs,
-            cells_fw=[self.lstm_dropout] * self.num_lstm_layer,
-            cells_bw=[self.lstm_dropout] * self.num_lstm_layer,
-            initial_states_fw=[self.initial_states] * self.num_lstm_layer,
-            initial_states_bw=[self.initial_states] * self.num_lstm_layer
+            cell_fw=self.fw_cell,
+            cell_bw=self.bw_cell,
+            initial_state_fw=self.initial_states_fw,
+            initial_state_bw=self.initial_states_bw
         )
+
+        self.bd_lstm_out = tf.concat(self.bd_lstm, 1)
 
         """
         Output Layer
@@ -62,7 +80,8 @@ class SequenceResidualLearner:
 
         self.shortcut_connect = tf.layers.dense(inputs=self.batch_normalizer, units=1024, activation=tf.nn.relu,
                                                 name="shorcut_connect")
-        self.output_layer = tf.add(tf.reshape(self.bd_lstm, shape=(250, 1024)), self.shortcut_connect)
+        #self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
+        self.output_layer = tf.add(tf.reshape(self.bd_lstm_out, shape=(250, 1024)), self.shortcut_connect)
         self.dropout = tf.layers.dropout(self.output_layer, rate=0.5)
         self.logits = tf.layers.dense(inputs=self.dropout, units=5, name="seq_logits")
         # End Define Model

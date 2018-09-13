@@ -4,14 +4,12 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 
 from src.existing_solution.flags import FLAGS, FILE_PATTERN
+from src.existing_solution.input_pipeline import InputPipeline
+from src.existing_solution.representation_learner import RepresentationLearner
+from src.existing_solution.sequence_residual_learner import SequenceResidualLearner
+from src.existing_solution.sequential_input_pipeline import SequentialInputPipeline
 
-
-def pretrain():
-    from src.existing_solution.input_pipeline import InputPipeline
-    from src.existing_solution.representation_learner import RepresentationLearner
-    from src.existing_solution.sequence_residual_learner import SequenceResidualLearner
-    from src.existing_solution.sequential_input_pipeline import SequentialInputPipeline
-
+def train():
     # hyper-parameters
     n_folds = 20
     sampling_rate = 100
@@ -29,6 +27,7 @@ def pretrain():
     init_op = tf.global_variables_initializer()
 
     with tf.Session() as sess:
+
         # initialize or restore
         try:
             rep_learn.restore(sess)
@@ -77,8 +76,6 @@ def pretrain():
         seq_in_eval = SequentialInputPipeline(
             "/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_data/SC41*.npz")
 
-        #config = tf.ConfigProto()
-        #config.gpu_options.allow_growth = True
         # Finetuning
         with tf.Session() as sess:
             # initialize or restore
@@ -145,10 +142,8 @@ def pretrain():
             print("\n\nConfusion Matrix:")
             print(confusion_matrix(labels, predictions))
 
-
 def main(unused_argv):
-    pretrain()
-    #fine_tune(tf.estimator.ModeKeys.TRAIN)
+    train()
 
 
 if __name__ == "__main__":

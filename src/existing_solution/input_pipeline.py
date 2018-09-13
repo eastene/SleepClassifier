@@ -6,7 +6,7 @@ from src.existing_solution.flags import FLAGS
 
 class InputPipeline:
 
-    def __init__(self, file_pattern, size_of_split=10):
+    def __init__(self, file_pattern, size_of_split=10, k_fold=21):
         """
         Input pipeline based on the Tensorflow Dataset API
         :param file_pattern: regex pattern of files to include as input (.tfrecord)
