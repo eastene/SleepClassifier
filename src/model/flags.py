@@ -55,9 +55,19 @@ tf.flags.DEFINE_string("data_dir", path.join(path.dirname(path.realpath(__file__
 tf.flags.DEFINE_string("tfrecord_dir", path.join(path.dirname(path.realpath(__file__)), "data/"),
                        "Path to directory containing data in .tfrecord format "
                        "for pretraining (if different from data_dir)")
+tf.flags.DEFINE_bool("oversample", True, "whether to oversample input to the representation learner, "
+                                         "requires rebuilding the tfrecords if altered")
 tf.flags.DEFINE_float("test_split", 0.3,
                       "ratio of data to set aside for evaluation "
                       "(signal epochs in pretraining and signal files in finetuning")
 tf.flags.DEFINE_string("file_pattern", "*.csv", "file pattern of data files containing original signals")
+
+"""
+*
+* Output Flags
+*
+"""
+tf.flags.DEFINE_bool("confsn_mat", False, "print confusion matrix on last evaluation after training model")
+tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
 
 FLAGS = tf.flags.FLAGS

@@ -1,8 +1,9 @@
 import tensorflow as tf
-from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
-from os import path
 
-from src.existing_solution.flags import FLAGS
+from os import path
+from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
+
+from src.model.flags import FLAGS
 from src.model.RepresentationLearner import RepresentationLearner
 
 
@@ -97,6 +98,14 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
 
+    def pretrain(self, sess, data):
+        self.mode = "TRAIN"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
+        return super(SequenceResidualLearner, self).pretrain(sess, data)
+
     def train(self, sess, data):
         feed_dict = {
             self.x: data[0],
@@ -104,15 +113,24 @@ class SequenceResidualLearner(RepresentationLearner):
         }
         return sess.run([self.seq_train_op, self.seq_loss], feed_dict=feed_dict)
 
-    def eval(self, sess, data):
+    def evaluate(self, sess, data):
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
         return sess.run([self.seq_eval_op], feed_dict=feed_dict)
 
+    def evaluate_rep_learner(self, sess, data):
+        self.mode = "EVAL"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
+        return super(SequenceResidualLearner, self).evaluate(sess, data)
+
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner
+        super(SequenceResidualLearner, self).checkpoint(sess)
         save_path = self.seq_saver.save(sess, self.seq_learn_dir)
         print("Sequential Learner saved to: {}".format(save_path))
 
@@ -122,9 +140,7 @@ class SequenceResidualLearner(RepresentationLearner):
             self.seq_saver.restore(sess, self.seq_learn_dir)  # restore only rep learner model
             print("Sequential Learner restored.")
         else:
-            raise tf.errors.NotFoundError(
-                node_def=self.seq_saver,
-                op=self.seq_saver.restore,
-                message="No existing Sequential Learner found at: {}. Initializing.".format(
-                    self.seq_learn_dir)
-            )
+            print("No existing Sequential Learner found at: {}. Initializing.".format(
+                self.seq_learn_dir))
+            sess.run(tf.global_variables_initializer())
+            super(SequenceResidualLearner, self).restore(sess)

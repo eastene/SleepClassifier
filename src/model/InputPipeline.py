@@ -68,7 +68,7 @@ class InputPipeline:
     def parse_fn(self, example):
         # format of each training example
         example_fmt = {
-            "signal": tf.FixedLenFeature((1, 3000), tf.float32),
+            "signal": tf.FixedLenFeature((1, FLAGS.sampling_rate * FLAGS.s_per_epoch), tf.float32),
             "label": tf.FixedLenFeature((), tf.int64, -1)
         }
 
