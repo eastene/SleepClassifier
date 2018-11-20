@@ -188,7 +188,7 @@ class RepresentationLearner:
         """
         self.saver = tf.train.Saver()  # saves entire model
 
-    def pretrain(self, sess, data):
+    def train(self, sess, data):
         self.learning_rate = FLAGS.learning_rate_pre
         self.mode = "TRAIN"
         feed_dict = {
@@ -196,15 +196,6 @@ class RepresentationLearner:
             self.y: data[1]
         }
         return sess.run([self.train_op, self.loss], feed_dict=feed_dict)
-
-    def finetune(self, sess, data):
-        self.learning_rate = FLAGS.learning_rate_fine
-        self.mode = "TRAIN"
-        feed_dict = {
-            self.x: data[0],
-            self.y: data[1]
-        }
-        return sess.run([self.train_op, self.output_layer, self.y], feed_dict=feed_dict)
 
     def evaluate(self, sess, data):
         self.mode = "EVAL"

@@ -17,7 +17,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.learning_rate = 0.0001
+        self.learning_rate = FLAGS.learning_rate_pretrain
         self.lstm_size = 512
         self.num_lstm_layer = 1
 
@@ -99,34 +99,27 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
 
     def pretrain(self, sess, data):
-        self.mode = "TRAIN"
-        feed_dict = {
-            self.x: data[0],
-            self.y: data[1]
-        }
-        return super(SequenceResidualLearner, self).pretrain(sess, data)
+        return super(SequenceResidualLearner, self).train(sess, data)
 
     def train(self, sess, data):
+        self.mode = "TRAIN"
+        self.learning_rate = FLAGS.learning_rate_finetune
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
         return sess.run([self.seq_train_op, self.seq_loss], feed_dict=feed_dict)
 
-    def evaluate(self, sess, data):
-        feed_dict = {
-            self.x: data[0],
-            self.y: data[1]
-        }
-        return sess.run([self.seq_eval_op], feed_dict=feed_dict)
-
     def evaluate_rep_learner(self, sess, data):
+        return super(SequenceResidualLearner, self).evaluate(sess, data)
+
+    def evaluate(self, sess, data):
         self.mode = "EVAL"
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
-        return super(SequenceResidualLearner, self).evaluate(sess, data)
+        return sess.run([self.seq_eval_op], feed_dict=feed_dict)
 
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner
