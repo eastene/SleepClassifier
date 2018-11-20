@@ -1,6 +1,8 @@
 import tensorflow as tf
 
-from os import path
+import os.path
+
+# from os import path
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -42,7 +44,7 @@ tf.flags.DEFINE_float("learn_rate_fine", 0.000001, "learning rate for pretrainin
 """
 tf.flags.DEFINE_integer("sampling_rate", 2000, "sampling rate used to generate signal (hz)")
 tf.flags.DEFINE_integer("s_per_epoch", 30, "seconds of signal data considered as a single epoch")
-tf.flags.DEFINE_string("checkpoint_dir", path.join(path.dirname(path.realpath(__file__)), "tmp/"),
+tf.flags.DEFINE_string("checkpoint_dir", os.path.join(os.path.dirname(os.path.realpath(__file__)), "tmp/"),
                        "directory in which to save model parameters while training")
 
 """
@@ -50,9 +52,13 @@ tf.flags.DEFINE_string("checkpoint_dir", path.join(path.dirname(path.realpath(__
 *  Data Flags
 *
 """
-tf.flags.DEFINE_string("data_dir", path.join(path.dirname(path.realpath(__file__)), "data/"),
+tf.flags.DEFINE_string("data_dir",
+                       os.path.abspath(
+                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
                        "Path to directory containing data files")
-tf.flags.DEFINE_string("tfrecord_dir", path.join(path.dirname(path.realpath(__file__)), "data/"),
+tf.flags.DEFINE_string("tfrecord_dir",
+                       os.path.abspath(
+                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
                        "Path to directory containing data in .tfrecord format "
                        "for pretraining (if different from data_dir)")
 tf.flags.DEFINE_bool("oversample", True, "whether to oversample input to the representation learner, "

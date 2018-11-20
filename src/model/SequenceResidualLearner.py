@@ -17,7 +17,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.learning_rate = FLAGS.learning_rate_pretrain
+        self.learning_rate = FLAGS.learn_rate_pre
         self.lstm_size = 512
         self.num_lstm_layer = 1
 
@@ -103,7 +103,7 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def train(self, sess, data):
         self.mode = "TRAIN"
-        self.learning_rate = FLAGS.learning_rate_finetune
+        self.learning_rate = FLAGS.learn_rate_fine
         feed_dict = {
             self.x: data[0],
             self.y: data[1]

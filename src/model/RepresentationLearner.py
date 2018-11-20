@@ -189,7 +189,7 @@ class RepresentationLearner:
         self.saver = tf.train.Saver()  # saves entire model
 
     def train(self, sess, data):
-        self.learning_rate = FLAGS.learning_rate_pre
+        self.learning_rate = FLAGS.learn_rate_pre
         self.mode = "TRAIN"
         feed_dict = {
             self.x: data[0],

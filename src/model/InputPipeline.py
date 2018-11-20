@@ -28,6 +28,7 @@ class InputPipeline:
         """
 
         # Directories and file patterns
+        self.data_len = 0
         self.data_dir = FLAGS.data_dir
         self.tfrecord_dir = FLAGS.tfrecord_dir
         self.tf_pattern = "*.tfrecord"
@@ -36,8 +37,12 @@ class InputPipeline:
         # Signal files, used by sequence learner
         self.seq_files = glob.glob(path.join(self.data_dir, self.seq_pattern))
         if len(self.seq_files) == 0:
-            print("No data files found! Terminating.")
+            print("No data files found matching {} in {}! Terminating.".format(self.seq_pattern, self.data_dir))
             exit(1)
+
+        for sf in self.seq_files:
+            with open(sf) as f:
+                self.data_len += sum(1 for line in f)  # count total lines in all dataset
 
         # Tfrecord files, used by representation learner
         self.pretrain_files = glob.glob(path.join(self.data_dir, self.seq_pattern))
@@ -49,11 +54,13 @@ class InputPipeline:
 
         # Pretrain input
         self.pretrain_dataset = self.input_fn()
-        self.train_iter = self.pretrain_dataset.skip(size_of_split).make_initializable_iterator()
-        self.eval_iter = self.pretrain_dataset.take(size_of_split).make_initializable_iterator()
+        num_batches = self.data_len // FLAGS.batch_size
+        train_split_batches = int(num_batches * (1 - FLAGS.test_split))
+        self.train_iter = self.pretrain_dataset.skip(train_split_batches).make_initializable_iterator()
+        self.eval_iter = self.pretrain_dataset.take(train_split_batches).make_initializable_iterator()
 
         # Finetune input
-        train_split = len(self.seq_files) // (1 - FLAGS.test_split)
+        train_split = int(self.data_len // (1 - FLAGS.test_split))
         self.train_seqs = self.seq_files[:train_split]
         self.test_seqs = self.seq_files[train_split:]
         self.train_seq_idx = 0  # tracks current train sequence
