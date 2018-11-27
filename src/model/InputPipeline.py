@@ -45,8 +45,8 @@ class InputPipeline:
                 self.data_len += sum(1 for line in f)  # count total lines in all dataset
 
         # Tfrecord files, used by representation learner
-        self.pretrain_files = glob.glob(path.join(self.data_dir, self.seq_pattern))
-        if len(self.seq_files) == 0:
+        self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
+        if len(self.pretrain_files) == 0:
             print("No data files found in tfrecord format for optimized pretraining.")
             print("Creating tfrecord files...")
             prepper = DataPrepper()

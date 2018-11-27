@@ -17,7 +17,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.learning_rate = FLAGS.learn_rate_pre
+        self.seq_learning_rate = FLAGS.learn_rate_pre
         self.lstm_size = 512
         self.num_lstm_layer = 1
 
@@ -27,7 +27,7 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         self.rep_learn = self.output_layer  # output of representation learner
         self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
-        self.batch_size = FLAGS.sequence_batch_size
+        self.seq_batch_size = FLAGS.sequence_batch_size
 
         """
         Bi-Directional LSTM
@@ -55,8 +55,8 @@ class SequenceResidualLearner(RepresentationLearner):
         self.bw_cell = tf.nn.rnn_cell.MultiRNNCell([self.bw_lstm_cell_1, self.bw_lstm_cell_2],
                                                    state_is_tuple=True)
 
-        self.initial_states_fw = self.fw_cell.zero_state(self.batch_size, dtype=tf.float32)
-        self.initial_states_bw = self.bw_cell.zero_state(self.batch_size, dtype=tf.float32)
+        self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+        self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
 
         # states are dropped after training on each sample so that the states from
         # one sample does not influence those of another
@@ -74,16 +74,17 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         Output Layer
         """
-        self.batch_normalizer = tf.layers.batch_normalization(
+        self.seq_batch_normalizer = tf.layers.batch_normalization(
             self.rep_learn,
             epsilon=1e-5,
             reuse=tf.AUTO_REUSE,
             name="seq_batch_normalizer"
         )
 
-        self.shortcut_connect = tf.layers.dense(inputs=self.batch_normalizer, units=1024, activation=tf.nn.relu,
+        self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
                                                 name="shorcut_connect")
-        self.seq_output_layer = tf.add(tf.reshape(self.bd_lstm, shape=(FLAGS.batch_size, 1024)), self.shortcut_connect)
+        #self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
+        self.seq_output_layer = tf.add(tf.reshape(self.bd_lstm_out, shape=(250, 1024)), self.shortcut_connect)
         self.seq_dropout = tf.layers.dropout(self.seq_output_layer, rate=0.5)
         self.seq_logits = tf.layers.dense(inputs=self.seq_dropout, units=5, name="seq_logits")
         # End Define Model
@@ -93,7 +94,7 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         # full model (rep learner + seq rep leaner)
         self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
-        self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.9, beta2=0.999,
+        self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
                                                     name="seq_opt")
         self.seq_train_op = self.optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
                                                     name="seq_train")
