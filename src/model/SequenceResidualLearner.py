@@ -25,9 +25,6 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         Input Layer
         """
-        self.x = tf.placeholder(dtype=tf.float32, shape=(None, 2816))
-        self.y = tf.placeholder(dtype=tf.int32)
-
         self.rep_learn = self.output_layer  # output of representation learner
 
         self.input_seqs = tf.split(self.rep_learn, num_or_size_splits=25, axis=0)
@@ -60,7 +57,7 @@ class SequenceResidualLearner(RepresentationLearner):
         Output Layer
         """
         self.batch_normalizer = tf.layers.batch_normalization(
-            self.x,
+            self.rep_learn,
             epsilon=1e-5,
             reuse=tf.AUTO_REUSE,
             name="seq_batch_normalizer"

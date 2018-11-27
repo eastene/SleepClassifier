@@ -161,8 +161,8 @@ class InputPipeline:
         """
         if sequential:
             if self.train_seq_idx >= len(self.train_seqs):
-                raise tf.errors.OutOfRangeError
-            data = np.loadtxt(self.train_seqs[self.train_seq_idx])
+                raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
+            data = np.loadtxt(self.train_seqs[self.train_seq_idx], delimiter=',')
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch])
 
@@ -176,8 +176,8 @@ class InputPipeline:
         """
         if sequential:
             if self.test_seq_idx >= len(self.test_seqs):
-                raise tf.errors.OutOfRangeError
-            data = np.loadtxt(self.test_seqs[self.test_seq_idx])
+                raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
+            data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch])
 

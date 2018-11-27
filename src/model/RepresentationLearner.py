@@ -220,5 +220,5 @@ class RepresentationLearner:
             self.saver.restore(sess, self.rep_learn_dir)  # restore only rep learner model
             print("Representation Learner restored.")
         else:
-            print("No Representation Learner found at: {}. Initializing.")
+            print("No Representation Learner found at: {}. Initializing.".format(self.rep_learn_dir))
             sess.run(tf.global_variables_initializer())

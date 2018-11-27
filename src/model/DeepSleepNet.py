@@ -18,15 +18,14 @@ class DeepSleepNet:
         self.sampling_rate = FLAGS.sampling_rate
 
         # model
-        #self.rep_learn = RepresentationLearner()
         self.seq_learn = SequenceResidualLearner()
 
         # batch iterator
         self.input = InputPipeline()
         self.next_elem_train_pre = self.input.next_train_elem()
         self.next_elem_eval_pre = self.input.next_eval_elem()
-        self.next_elem_train_fine = self.input.next_train_elem(sequential=True)
-        self.next_elem_eval_fine = self.input.next_eval_elem(sequential=True)
+        self.next_elem_train_fine = self.input.next_train_elem
+        self.next_elem_eval_fine = self.input.next_eval_elem
 
         # define initialisation operator
         self.init_op = tf.global_variables_initializer()
@@ -34,8 +33,8 @@ class DeepSleepNet:
         # loss arrays for plotting loss over time
         self.loss_tr_pre = np.empty((FLAGS.num_epochs_pretrain))
         self.loss_ts_pre = np.empty((FLAGS.num_epochs_pretrain))
-        self.loss_tr_fine = np.empty((FLAGS.num_epochs_finetrain))
-        self.loss_ts_fine = np.empty((FLAGS.num_epochs_finetrain))
+        self.loss_tr_fine = np.empty((FLAGS.num_epochs_finetune))
+        self.loss_ts_fine = np.empty((FLAGS.num_epochs_finetune))
 
     def run_epoch_pretrain(self, sess):
         # PRETRAINING TRAIN LOOP
@@ -67,7 +66,7 @@ class DeepSleepNet:
             # each epoch consists of a number of patient sequences
             try:
                 while True:
-                    seq_data = self.next_elem_train_fine
+                    seq_data = self.next_elem_train_fine(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     for batch in seq_data:
                         _, c = self.seq_learn.train(sess, batch)
@@ -134,7 +133,7 @@ class DeepSleepNet:
             # Evaluate
             try:
                 while True:
-                    seq_data = self.next_elem_eval_fine
+                    seq_data = self.next_elem_eval_fine(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     for batch in seq_data:
                         m = self.seq_learn.evaluate(sess, batch)
