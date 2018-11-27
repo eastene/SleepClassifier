@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from os import path
-from tensorflow.contrib.rnn import stack_bidirectional_rnn, LSTMCell, DropoutWrapper
+from tensorflow.contrib.rnn import LSTMCell, DropoutWrapper
 
 from src.model.flags import FLAGS
 from src.model.RepresentationLearner import RepresentationLearner
@@ -26,32 +26,50 @@ class SequenceResidualLearner(RepresentationLearner):
         Input Layer
         """
         self.rep_learn = self.output_layer  # output of representation learner
-
-        self.input_seqs = tf.split(self.rep_learn, num_or_size_splits=25, axis=0)
-        self.batch_size = tf.shape(self.input_seqs[0])[0]
+        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
+        self.batch_size = FLAGS.sequence_batch_size
 
         """
         Bi-Directional LSTM
         """
         # Bidirectional LSTM Cell
-        self.lstm_cell = LSTMCell(self.lstm_size)
-
+        # for some reason, the 2 layers of the bidirectional lstm will not work without explicitly enumerating each layer
+        # TODO: make this a loop? or use a different method to create 2 layers
+        self.fw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.bw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.fw_lstm_cell_2 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
+        self.bw_lstm_cell_2 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
         # Dropout Between Layers
-        self.lstm_dropout = DropoutWrapper(self.lstm_cell, input_keep_prob=0.5, output_keep_prob=0.5,
-                                           state_keep_prob=0.5)
+        self.fw_lstm_cell_1 = DropoutWrapper(self.fw_lstm_cell_1, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
+        self.bw_lstm_cell_1 = DropoutWrapper(self.bw_lstm_cell_1, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
+        self.fw_lstm_cell_2 = DropoutWrapper(self.fw_lstm_cell_2, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
+        self.bw_lstm_cell_2 = DropoutWrapper(self.bw_lstm_cell_2, input_keep_prob=0.5, output_keep_prob=0.5,
+                                             state_keep_prob=0.5)
 
         # 2-Layered Bidirectional LSTM
-        self.initial_states = self.lstm_dropout.zero_state(self.batch_size, dtype=tf.float32)
+        self.fw_cell = tf.nn.rnn_cell.MultiRNNCell([self.fw_lstm_cell_1, self.fw_lstm_cell_2],
+                                                   state_is_tuple=True)
+        self.bw_cell = tf.nn.rnn_cell.MultiRNNCell([self.bw_lstm_cell_1, self.bw_lstm_cell_2],
+                                                   state_is_tuple=True)
+
+        self.initial_states_fw = self.fw_cell.zero_state(self.batch_size, dtype=tf.float32)
+        self.initial_states_bw = self.bw_cell.zero_state(self.batch_size, dtype=tf.float32)
 
         # states are dropped after training on each sample so that the states from
         # one sample does not influence those of another
-        self.bd_lstm, self.state_fw, self.state_bw = stack_bidirectional_rnn(
+        # dynamic RNN chosen to train on GPUs with smaller memories
+        self.bd_lstm, self.states = tf.nn.bidirectional_dynamic_rnn(
             inputs=self.input_seqs,
-            cells_fw=[self.lstm_dropout] * self.num_lstm_layer,
-            cells_bw=[self.lstm_dropout] * self.num_lstm_layer,
-            initial_states_fw=[self.initial_states] * self.num_lstm_layer,
-            initial_states_bw=[self.initial_states] * self.num_lstm_layer
+            cell_fw=self.fw_cell,
+            cell_bw=self.bw_cell,
+            initial_state_fw=self.initial_states_fw,
+            initial_state_bw=self.initial_states_bw
         )
+
+        self.bd_lstm_out = tf.concat(self.bd_lstm, 1)
 
         """
         Output Layer
