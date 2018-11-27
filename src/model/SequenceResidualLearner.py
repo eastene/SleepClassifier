@@ -84,7 +84,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
                                                 name="shorcut_connect")
         #self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
-        self.seq_output_layer = tf.add(tf.reshape(self.bd_lstm_out, shape=(250, 1024)), self.shortcut_connect)
+        self.seq_output_layer = tf.add(tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)), self.shortcut_connect)
         self.seq_dropout = tf.layers.dropout(self.seq_output_layer, rate=0.5)
         self.seq_logits = tf.layers.dense(inputs=self.seq_dropout, units=5, name="seq_logits")
         # End Define Model

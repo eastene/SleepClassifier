@@ -23,10 +23,10 @@ class DataPrepper:
 
         X, Y = np.vstack(X), np.hstack(Y)
         if (FLAGS.oversample):
-            print("Pre Oversampling Label Counts {}".format(np.bincount(Y)))
+            print("Pre Oversampling Label Counts {}".format(np.bincount(Y.astype(dtype=np.int64))))
             ros = RandomOverSampler()
             X, Y = ros.fit_sample(X, Y)
-            print("Post Oversampling Label Counts {}".format(np.bincount(Y)))
+            print("Post Oversampling Label Counts {}".format(np.bincount(Y.astype(dtype=np.int64))))
 
         print("Writing to tfrecord...", end=" ")
         max_examples_per_file = 2048
