@@ -46,11 +46,12 @@ class InputPipeline:
 
         # Tfrecord files, used by representation learner
         self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
-        if len(self.pretrain_files) == 0:
-            print("No data files found in tfrecord format for optimized pretraining.")
-            print("Creating tfrecord files...")
+        missing_files = [f for f in self.seq_files if all(f.split("_")[0] not in id.split("_")[0] for id in self.pretrain_files)]
+        if len(missing_files) > 0:
+            print("Not enough data files found in tfrecord format for optimized pretraining.")
+            print("Creating missing tfrecord files...")
             prepper = DataPrepper()
-            prepper.convert2tfrecord(self.seq_files)
+            prepper.convert2tfrecord(missing_files)
 
         # Pretrain input
         self.pretrain_dataset = self.input_fn()
@@ -164,7 +165,7 @@ class InputPipeline:
                 raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
             data = np.loadtxt(self.train_seqs[self.train_seq_idx], delimiter=',')
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
-                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch])
+                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 
         return self.train_iter.get_next()
 
@@ -179,6 +180,6 @@ class InputPipeline:
                 raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
             data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
-                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch])
+                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 
         return self.eval_iter.get_next()

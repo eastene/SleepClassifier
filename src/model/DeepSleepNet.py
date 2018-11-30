@@ -20,6 +20,7 @@ class DeepSleepNet:
         # model
         self.seq_learn = SequenceResidualLearner()
 
+
         # batch iterator
         self.input = InputPipeline()
         self.next_elem_train_pre = self.input.next_train_elem()
@@ -186,6 +187,7 @@ class DeepSleepNet:
 def main(unused_argv):
     dn = DeepSleepNet()
     dn.train()
+    dn.plot_loss()
     # fine_tune(tf.estimator.ModeKeys.TRAIN)
 
 
