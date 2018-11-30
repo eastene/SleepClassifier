@@ -8,7 +8,7 @@ from src.model.flags import FLAGS
 class DataPrepper:
 
     def __init__(self):
-        pass
+        self.files = []
 
     def convert2tfrecord(self, files):
         # load all data
@@ -16,6 +16,8 @@ class DataPrepper:
         Y = []
         sizes = []
         sampling_rate = 0.0
+
+        self.files = files
         for f in files:
             data = np.loadtxt(f, dtype=np.float32, delimiter=',')
             print(data.shape)
@@ -23,16 +25,16 @@ class DataPrepper:
             Y.append(data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1)
             sizes.append(data.shape[0])
 
-        X, Y = np.vstack(X), np.hstack(Y)
+        X_s, Y_s = np.vstack(X), np.hstack(Y)
         if (FLAGS.oversample):
-            print("Pre Oversampling Label Counts {}".format(np.bincount(Y)))
+            print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
             ros = RandomOverSampler()
-            X_tmp, Y_tmp = ros.fit_sample(X, Y)
+            X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
             print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
         else:
-            X_tmp, Y_tmp = X, Y
+            X_tmp, Y_tmp = X_s, Y_s
 
-        print("Writing to tfrecord...", end=" ")
+        print("Writing to tfrecord... [", end=" ")
         offset = 0
         for i, f in enumerate(files):
             out_str = f + "_oversampled" if FLAGS.oversample else ""
@@ -51,3 +53,15 @@ class DataPrepper:
                         tfwriter.write(example.SerializeToString())
             offset += sizes[i]
         print("Done.")
+
+#TODO implement buffer
+    def read_seq_files_2_buffer(self, start_idx, buff_pos, buffer):
+        _buffer = buffer
+
+        # buffer larger than number of files, read
+        if len(self.files) < FLAGS.seq_buff_size:
+
+            if len(buffer) == 0:
+                for f in files:
+                    data = np.loadtxt(f, dtype=np.float32, delimiter=',')
+            return buffer

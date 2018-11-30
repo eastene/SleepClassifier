@@ -33,6 +33,7 @@ class InputPipeline:
         self.tfrecord_dir = FLAGS.tfrecord_dir
         self.tf_pattern = "*.tfrecord"
         self.seq_pattern = FLAGS.file_pattern
+        self.prepper = DataPrepper()
 
         # Signal files, used by sequence learner
         self.seq_files = glob.glob(path.join(self.data_dir, self.seq_pattern))
@@ -50,8 +51,7 @@ class InputPipeline:
         if len(missing_files) > 0:
             print("Not enough data files found in tfrecord format for optimized pretraining.")
             print("Creating missing tfrecord files...")
-            prepper = DataPrepper()
-            prepper.convert2tfrecord(missing_files)
+            self.prepper.convert2tfrecord(missing_files)
 
         # Pretrain input
         self.pretrain_dataset = self.input_fn()
@@ -66,6 +66,7 @@ class InputPipeline:
         self.test_seqs = self.seq_files[train_split:]
         self.train_seq_idx = 0  # tracks current train sequence
         self.test_seq_idx = 0  # tracks current eval sequence
+        self.buffer = []
 
     """
     *
@@ -164,6 +165,7 @@ class InputPipeline:
             if self.train_seq_idx >= len(self.train_seqs):
                 raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
             data = np.loadtxt(self.train_seqs[self.train_seq_idx], delimiter=',')
+            self.train_seq_idx += 1
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 
@@ -179,6 +181,7 @@ class InputPipeline:
             if self.test_seq_idx >= len(self.test_seqs):
                 raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
             data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
+            self.eval_seq_idx += 1
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 

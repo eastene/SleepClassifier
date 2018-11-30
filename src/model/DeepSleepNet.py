@@ -1,12 +1,12 @@
 import numpy as np
 import tensorflow as tf
+from tensorflow.python import debug as tf_debug
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import confusion_matrix
 
 from src.model.flags import FLAGS
 from src.model.InputPipeline import InputPipeline
-from src.model.RepresentationLearner import RepresentationLearner
 from src.model.SequenceResidualLearner import SequenceResidualLearner
 
 
@@ -82,6 +82,7 @@ class DeepSleepNet:
 
     def train(self):
         with tf.Session() as sess:
+            #sess = tf_debug.LocalCLIDebugWrapperSession(sess, ui_type='readline')
             """
             Train Representation Learner (Pretraining)
             """
