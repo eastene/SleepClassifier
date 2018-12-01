@@ -181,7 +181,7 @@ class InputPipeline:
             if self.test_seq_idx >= len(self.test_seqs):
                 raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
             data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
-            self.eval_seq_idx += 1
+            self.test_seq_idx += 1
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 
