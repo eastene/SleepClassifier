@@ -40,6 +40,11 @@ class InputPipeline:
         if len(self.seq_files) == 0:
             print("No data files found matching {} in {}! Terminating.".format(self.seq_pattern, self.data_dir))
             exit(1)
+        # if only 1 sequence file, test/train split cannot be used as normal (will truncate sleep/wake cycle)
+        elif len(self.seq_files) == 1 and input("Only 1 input file detected! Train and test on "
+                                                "same file (otherwise, split file manually)? (y/n): ").lower() != 'y':
+            print("Terminating")
+            exit(1)
 
         for sf in self.seq_files:
             with open(sf) as f:
@@ -47,7 +52,8 @@ class InputPipeline:
 
         # Tfrecord files, used by representation learner
         self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
-        missing_files = [f for f in self.seq_files if all(f.split("_")[0] not in id.split("_")[0] for id in self.pretrain_files)]
+        missing_files = [f for f in self.seq_files if
+                         all(f.split("_")[0] not in id.split("_")[0] for id in self.pretrain_files)]
         if len(missing_files) > 0:
             print("Not enough data files found in tfrecord format for optimized pretraining.")
             print("Creating missing tfrecord files...")
@@ -61,9 +67,9 @@ class InputPipeline:
         self.eval_iter = self.pretrain_dataset.take(train_split_batches).make_initializable_iterator()
 
         # Finetune input
-        train_split = int(self.data_len // (1 - FLAGS.test_split))
-        self.train_seqs = self.seq_files[:train_split]
-        self.test_seqs = self.seq_files[train_split:]
+        test_split = max(1, int(len(self.seq_files) * (1 - FLAGS.test_split))) if len(self.seq_files) > 1 else 0
+        self.train_seqs = self.seq_files[:test_split]
+        self.test_seqs = self.seq_files[test_split:]
         self.train_seq_idx = 0  # tracks current train sequence
         self.test_seq_idx = 0  # tracks current eval sequence
         self.buffer = []
@@ -166,6 +172,8 @@ class InputPipeline:
                 raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
             data = np.loadtxt(self.train_seqs[self.train_seq_idx], delimiter=',')
             self.train_seq_idx += 1
+            data[data == np.inf] = 0
+            data[data == -np.inf] = 0
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 
@@ -182,6 +190,8 @@ class InputPipeline:
                 raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
             data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
             self.test_seq_idx += 1
+            data[data == np.inf] = 0
+            data[data == -np.inf] = 0
             return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
                                        data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
 

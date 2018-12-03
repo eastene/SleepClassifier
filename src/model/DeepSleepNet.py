@@ -99,7 +99,7 @@ class DeepSleepNet:
             """
             self.run_epoch_finetune(sess)
             print("Evaluating Model...", end=" ")
-            self.evaluate()
+            self.evaluate(sess)
 
             if FLAGS.confsn_mat:
                 self.print_confusion_matrix(sess)
@@ -173,16 +173,16 @@ class DeepSleepNet:
 
     def plot_loss(self):
         fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
-        ax1.plot(range(1, FLAGS.num_epochs_pretrain), self.loss_tr_pre)
-        ax1.plot(range(1, FLAGS.num_epochs_pretrain), self.loss_ts_pre)
+        ax1.plot(range(1, FLAGS.num_epochs_pretrain + 1), self.loss_tr_pre)
+        ax1.plot(range(1, FLAGS.num_epochs_pretrain + 1), self.loss_ts_pre)
         ax1.set_xlabel('Epoch')
         ax1.set_ylabel('Loss (Cross Entropy)')
-        ax1.title('Representation Learning')
-        ax2.plot(range(1, FLAGS.num_epochs_finetune), self.loss_tr_fine)
-        ax2.plot(range(1, FLAGS.num_epochs_finetune), self.loss_ts_fine)
+        ax1.set_title('Representation Learning')
+        ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_tr_fine)
+        ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_ts_fine)
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss (Cross Entropy)')
-        ax2.title('Sequence Residual Learning')
+        ax2.set_title('Sequence Residual Learning')
 
 
 def main(unused_argv):

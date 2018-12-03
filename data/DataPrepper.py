@@ -19,13 +19,14 @@ class DataPrepper:
 
         self.files = files
         for f in files:
-            data = np.loadtxt(f, dtype=np.float32, delimiter=',')
-            print(data.shape)
+            data = np.genfromtxt(f, dtype=np.float64, delimiter=',', filling_values=[0])
             X.append(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch])
             Y.append(data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1)
             sizes.append(data.shape[0])
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
+        X_s[X_s == np.inf] = 0
+        X_s[X_s == -np.inf] = 0
         if (FLAGS.oversample):
             print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
             ros = RandomOverSampler()
