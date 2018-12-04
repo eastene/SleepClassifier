@@ -24,7 +24,7 @@ tf.flags.DEFINE_integer("prefetch_buffer_size", 100,
 *
 """
 tf.flags.DEFINE_integer("num_epochs_pretrain", 100, "number of epochs for pre-training")
-tf.flags.DEFINE_integer("batch_size", 100, "batch size")
+tf.flags.DEFINE_integer("batch_size", 1, "batch size")
 tf.flags.DEFINE_float("learn_rate_pre", 0.0001, "learning rate for pretraining")
 
 """
@@ -68,6 +68,7 @@ tf.flags.DEFINE_float("test_split", 0.3,
                       "(signal epochs in pretraining and signal files in finetuning")
 tf.flags.DEFINE_string("file_pattern", "*.csv", "file pattern of data files containing original signals")
 tf.flags.DEFINE_integer("seq_buff_size", 15, "number of full sequences to keep in buffer at a time")
+tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the input signal")
 
 """
 *
@@ -78,3 +79,5 @@ tf.flags.DEFINE_bool("confsn_mat", False, "print confusion matrix on last evalua
 tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
 
 FLAGS = tf.flags.FLAGS
+
+EFFECTIVE_SAMPLE_RATE = FLAGS.sampling_rate // max(FLAGS.resample_rate, 1)

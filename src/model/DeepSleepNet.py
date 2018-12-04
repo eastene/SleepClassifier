@@ -5,17 +5,16 @@ import matplotlib.pyplot as plt
 
 from sklearn.metrics import confusion_matrix
 
-from src.model.flags import FLAGS
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 from src.model.InputPipeline import InputPipeline
 from src.model.SequenceResidualLearner import SequenceResidualLearner
-
 
 class DeepSleepNet:
 
     def __init__(self):
         # hyper-parameters
         self.n_folds = 20
-        self.sampling_rate = FLAGS.sampling_rate
+        self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
         # model
         self.seq_learn = SequenceResidualLearner()
@@ -60,7 +59,7 @@ class DeepSleepNet:
     def run_epoch_finetune(self, sess):
         # FINETUNING TRAIN LOOP
         for epoch in range(FLAGS.num_epochs_pretrain):
-            self.input.initialize_train()
+            self.input.initialize_train(sequential=True)
             cost = 0.0
             n_batches = 0
 
@@ -94,6 +93,9 @@ class DeepSleepNet:
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
 
+            train_writer = tf.summary.FileWriter('train',
+                                                 sess.graph)
+            train_writer.add_graph(tf.get_default_graph())
             """
             Train Sequence Learner (Finetuning)
             """
@@ -130,7 +132,7 @@ class DeepSleepNet:
             # FINETUNING EVAL LOOP
             m_tot = 0
             n_batches = 0
-            self.input.initialize_train()
+            self.input.initialize_eval(sequential=True)
 
             # Evaluate
             try:
@@ -154,10 +156,10 @@ class DeepSleepNet:
         # Print final Confusion Matrix
         Y = []
         Y_pred = []
-        self.input.initialize_eval()
+        self.input.initialize_eval(sequential=True)
         try:
             while True:
-                seq_data = self.next_elem_train_fine
+                seq_data = self.next_elem_eval_fine(sequential=True)
                 # each patient sequence is batched, and the LSTM is reinitialized for each patient
                 for batch in seq_data:
                     y_pred = self.seq_learn.predict(sess, batch)

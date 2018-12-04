@@ -2,8 +2,7 @@ import tensorflow as tf
 from tensorflow.contrib.layers import l2_regularizer
 from os import path
 
-from src.model.flags import FLAGS
-
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 
 class RepresentationLearner:
 
@@ -11,7 +10,7 @@ class RepresentationLearner:
         # Housekeeping Parameters
         self.gen_dir = FLAGS.checkpoint_dir  # where to save whole model
         self.rep_learn_dir = path.join(FLAGS.checkpoint_dir, "rep_learn", "")  # where to save reusable layers
-        self.sampling_rate = FLAGS.sampling_rate
+        self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
         # Hyperparameters
         self.mode = "TRAIN"  # default value, mutable, only used for dropout layers
@@ -23,7 +22,7 @@ class RepresentationLearner:
         """
         self.x = tf.placeholder(dtype=tf.float32)
         self.y = tf.placeholder(dtype=tf.int32)
-        self.input_layer = tf.reshape(self.x, [-1, FLAGS.sampling_rate * FLAGS.s_per_epoch, 1])
+        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, 1])
 
         # with tf.variable_scope("REP_SCOPE") as scope:
 

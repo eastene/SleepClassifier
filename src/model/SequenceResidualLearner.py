@@ -146,6 +146,14 @@ class SequenceResidualLearner(RepresentationLearner):
         save_path = self.seq_saver.save(sess, self.seq_learn_dir)
         print("Sequential Learner saved to: {}".format(save_path))
 
+    def predict(self, sess, data):
+        self.mode = "PREDICT"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
+        return sess.run([self.seq_pred_classes], feed_dict=feed_dict)
+
     def restore(self, sess):
         print("Restoring Sequence Learner...", end=" ")
         if tf.train.checkpoint_exists(self.seq_learn_dir):

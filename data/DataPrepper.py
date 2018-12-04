@@ -41,17 +41,21 @@ class DataPrepper:
             out_str = f + "_oversampled" if FLAGS.oversample else ""
             with tf.python_io.TFRecordWriter(out_str + '.tfrecord') as tfwriter:
                 for j in range(sizes[i]):
-                        example = tf.train.Example(
-                            features=tf.train.Features(
-                                feature={
-                                    'signal': tf.train.Feature(
-                                        float_list=tf.train.FloatList(value=X_tmp[offset + j, :])),
-                                    'label': tf.train.Feature(
-                                        int64_list=tf.train.Int64List(value=[Y_tmp[offset + j]]))
-                                }
-                            )
+                    x = X_tmp[offset + j, :]
+                    if FLAGS.resample_rate > 0:
+                        x = x.reshape(-1, FLAGS.resample_rate).mean(axis=1)
+                    y = Y_tmp[offset + j]
+                    example = tf.train.Example(
+                        features=tf.train.Features(
+                            feature={
+                                'signal': tf.train.Feature(
+                                    float_list=tf.train.FloatList(value=x)),
+                                'label': tf.train.Feature(
+                                    int64_list=tf.train.Int64List(value=[y]))
+                            }
                         )
-                        tfwriter.write(example.SerializeToString())
+                    )
+                    tfwriter.write(example.SerializeToString())
             offset += sizes[i]
         print("Done.")
 

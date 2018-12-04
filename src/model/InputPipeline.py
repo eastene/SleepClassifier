@@ -49,7 +49,6 @@ class InputPipeline:
         for sf in self.seq_files:
             with open(sf) as f:
                 self.data_len += sum(1 for line in f)  # count total lines in all dataset
-
         # Tfrecord files, used by representation learner
         self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
         missing_files = [f for f in self.seq_files if
@@ -62,9 +61,9 @@ class InputPipeline:
         # Pretrain input
         self.pretrain_dataset = self.input_fn()
         num_batches = self.data_len // FLAGS.batch_size
-        train_split_batches = int(num_batches * (1 - FLAGS.test_split))
-        self.train_iter = self.pretrain_dataset.skip(train_split_batches).make_initializable_iterator()
-        self.eval_iter = self.pretrain_dataset.take(train_split_batches).make_initializable_iterator()
+        test_split_batches = int(num_batches * FLAGS.test_split)
+        self.train_iter = self.pretrain_dataset.skip(test_split_batches).make_initializable_iterator()
+        self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
 
         # Finetune input
         test_split = max(1, int(len(self.seq_files) * (1 - FLAGS.test_split))) if len(self.seq_files) > 1 else 0
@@ -174,8 +173,12 @@ class InputPipeline:
             self.train_seq_idx += 1
             data[data == np.inf] = 0
             data[data == -np.inf] = 0
-            return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
-                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
+            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+            if FLAGS.resample_rate > 0:
+                x = x.reshape(-1, FLAGS.resample_rate).mean()
+            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1
+
+            return self.batch_seq_data(x, y)
 
         return self.train_iter.get_next()
 
