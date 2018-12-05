@@ -19,9 +19,13 @@ class DataPrepper:
 
         self.files = files
         for f in files:
-            data = np.genfromtxt(f, dtype=np.float64, delimiter=',', filling_values=[0])
-            X.append(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch])
-            Y.append(data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1)
+            data = np.genfromtxt(f, dtype=np.float32, delimiter=',', filling_values=[0])
+            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch]
+            if FLAGS.resample_rate > 0:
+                x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+            X.append(x)
+            Y.append(y.astype(dtype=np.int64) - 1)
             sizes.append(data.shape[0])
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
@@ -35,23 +39,19 @@ class DataPrepper:
         else:
             X_tmp, Y_tmp = X_s, Y_s
 
-        print("Writing to tfrecord... [", end=" ")
+        print("Writing to tfrecord...", end=" ")
         offset = 0
         for i, f in enumerate(files):
             out_str = f + "_oversampled" if FLAGS.oversample else ""
             with tf.python_io.TFRecordWriter(out_str + '.tfrecord') as tfwriter:
                 for j in range(sizes[i]):
-                    x = X_tmp[offset + j, :]
-                    if FLAGS.resample_rate > 0:
-                        x = x.reshape(-1, FLAGS.resample_rate).mean(axis=1)
-                    y = Y_tmp[offset + j]
                     example = tf.train.Example(
                         features=tf.train.Features(
                             feature={
                                 'signal': tf.train.Feature(
-                                    float_list=tf.train.FloatList(value=x)),
+                                    float_list=tf.train.FloatList(value=X_tmp[offset + j, :])),
                                 'label': tf.train.Feature(
-                                    int64_list=tf.train.Int64List(value=[y]))
+                                    int64_list=tf.train.Int64List(value=[Y_tmp[offset + j]]))
                             }
                         )
                     )

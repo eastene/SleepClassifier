@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from os import path
-from src.model.flags import FLAGS
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 from data.DataPrepper import DataPrepper
 
 
@@ -68,9 +68,9 @@ class InputPipeline:
         # Finetune input
         test_split = max(1, int(len(self.seq_files) * (1 - FLAGS.test_split))) if len(self.seq_files) > 1 else 0
         self.train_seqs = self.seq_files[:test_split]
-        self.test_seqs = self.seq_files[test_split:]
+        self.eval_seqs = self.seq_files[test_split:]
         self.train_seq_idx = 0  # tracks current train sequence
-        self.test_seq_idx = 0  # tracks current eval sequence
+        self.eval_seq_idx = 0  # tracks current eval sequence
         self.buffer = []
 
     """
@@ -82,7 +82,7 @@ class InputPipeline:
     def parse_fn(self, example):
         # format of each training example
         example_fmt = {
-            "signal": tf.FixedLenFeature((1, FLAGS.sampling_rate * FLAGS.s_per_epoch), tf.float32),
+            "signal": tf.FixedLenFeature((1, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch), tf.float32),
             "label": tf.FixedLenFeature((), tf.int64, -1)
         }
 
@@ -118,6 +118,17 @@ class InputPipeline:
         dataset = dataset.prefetch(buffer_size=FLAGS.prefetch_buffer_size)
 
         return dataset
+
+    def get_next_seq(self, file):
+        data = np.loadtxt(file, delimiter=',')
+        data[data == np.inf] = 0
+        data[data == -np.inf] = 0
+        x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+        if FLAGS.resample_rate > 0:
+            x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+        y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1
+
+        return self.batch_seq_data(x, y)
 
     def batch_seq_data(self, x, y):
         batch_size = FLAGS.sequence_batch_size
@@ -156,7 +167,7 @@ class InputPipeline:
 
     def initialize_eval(self, sequential=False):
         if sequential:
-            self.test_seq_idx = 0
+            self.eval_seq_idx = 0
             return None
         return self.eval_iter.initializer
 
@@ -169,16 +180,9 @@ class InputPipeline:
         if sequential:
             if self.train_seq_idx >= len(self.train_seqs):
                 raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
-            data = np.loadtxt(self.train_seqs[self.train_seq_idx], delimiter=',')
+            file = self.train_seqs[self.train_seq_idx]
             self.train_seq_idx += 1
-            data[data == np.inf] = 0
-            data[data == -np.inf] = 0
-            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-            if FLAGS.resample_rate > 0:
-                x = x.reshape(-1, FLAGS.resample_rate).mean()
-            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1
-
-            return self.batch_seq_data(x, y)
+            return self.get_next_seq(file)
 
         return self.train_iter.get_next()
 
@@ -189,13 +193,10 @@ class InputPipeline:
         :return: next eval element in [batch_size, signal_len] shape
         """
         if sequential:
-            if self.test_seq_idx >= len(self.test_seqs):
+            if self.eval_seq_idx >= len(self.eval_seqs):
                 raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
-            data = np.loadtxt(self.test_seqs[self.test_seq_idx], delimiter=',')
-            self.test_seq_idx += 1
-            data[data == np.inf] = 0
-            data[data == -np.inf] = 0
-            return self.batch_seq_data(data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch],
-                                       data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1)
+            file = self.eval_seqs[self.eval_seq_idx]
+            self.eval_seq_idx += 1
+            return self.get_next_seq(file)
 
         return self.eval_iter.get_next()
