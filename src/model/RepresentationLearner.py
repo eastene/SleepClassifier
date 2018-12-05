@@ -4,6 +4,7 @@ from os import path
 
 from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 
+
 class RepresentationLearner:
 
     def __init__(self):

@@ -15,7 +15,6 @@ class DataPrepper:
         X = []
         Y = []
         sizes = []
-        sampling_rate = 0.0
 
         self.files = files
         for f in files:
@@ -31,7 +30,7 @@ class DataPrepper:
         X_s, Y_s = np.vstack(X), np.hstack(Y)
         X_s[X_s == np.inf] = 0
         X_s[X_s == -np.inf] = 0
-        if (FLAGS.oversample):
+        if FLAGS.oversample:
             print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
             ros = RandomOverSampler()
             X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
@@ -59,7 +58,7 @@ class DataPrepper:
             offset += sizes[i]
         print("Done.")
 
-#TODO implement buffer
+    # TODO implement buffer
     def read_seq_files_2_buffer(self, start_idx, buff_pos, buffer):
         _buffer = buffer
 

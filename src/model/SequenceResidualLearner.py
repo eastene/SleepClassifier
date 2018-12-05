@@ -28,7 +28,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
-        with tf.name_scope("seq") as seq_space:
+        with tf.name_scope("seq") as _:
             self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
             self.seq_batch_size = FLAGS.sequence_batch_size
 
@@ -36,7 +36,8 @@ class SequenceResidualLearner(RepresentationLearner):
             Bi-Directional LSTM
             """
             # Bidirectional LSTM Cell
-            # for some reason, the 2 layers of the bidirectional lstm will not work without explicitly enumerating each layer
+            # for some reason, the 2 layers of the bidirectional lstm will not work
+            # without explicitly enumerating each layer
             # TODO: make this a loop? or use a different method to create 2 layers
             self.fw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
             self.bw_lstm_cell_1 = LSTMCell(num_units=self.lstm_size, use_peepholes=True, state_is_tuple=True)
@@ -86,8 +87,10 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
                                                     name="shorcut_connect")
-            #self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
-            self.seq_output_layer = tf.add(tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)), self.shortcut_connect)
+            # self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
+            self.seq_output_layer = tf.add(
+                tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)),
+                self.shortcut_connect)
             self.seq_dropout = tf.layers.dropout(self.seq_output_layer, rate=0.5)
             self.seq_logits = tf.layers.dense(inputs=self.seq_dropout, units=5, name="seq_logits")
             # End Define Model
@@ -100,7 +103,9 @@ class SequenceResidualLearner(RepresentationLearner):
             self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
                                                         name="seq_opt")
             self.seq_train_op = self.optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
-                                                        name="seq_train", var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='seq'))
+                                                        name="seq_train",
+                                                        var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                                   scope='seq'))
         """
         Eval
         """

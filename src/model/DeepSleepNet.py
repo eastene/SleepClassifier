@@ -1,13 +1,12 @@
+import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from tensorflow.python import debug as tf_debug
-import matplotlib.pyplot as plt
-
 from sklearn.metrics import confusion_matrix
 
-from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 from src.model.InputPipeline import InputPipeline
 from src.model.SequenceResidualLearner import SequenceResidualLearner
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
+
 
 class DeepSleepNet:
 
@@ -18,7 +17,6 @@ class DeepSleepNet:
 
         # model
         self.seq_learn = SequenceResidualLearner()
-
 
         # batch iterator
         self.input = InputPipeline()
@@ -31,10 +29,10 @@ class DeepSleepNet:
         self.init_op = tf.global_variables_initializer()
 
         # loss arrays for plotting loss over time
-        self.loss_tr_pre = np.empty((FLAGS.num_epochs_pretrain))
-        self.loss_ts_pre = np.empty((FLAGS.num_epochs_pretrain))
-        self.loss_tr_fine = np.empty((FLAGS.num_epochs_finetune))
-        self.loss_ts_fine = np.empty((FLAGS.num_epochs_finetune))
+        self.loss_tr_pre = np.empty(FLAGS.num_epochs_pretrain)
+        self.loss_ts_pre = np.empty(FLAGS.num_epochs_pretrain)
+        self.loss_tr_fine = np.empty(FLAGS.num_epochs_finetune)
+        self.loss_ts_fine = np.empty(FLAGS.num_epochs_finetune)
 
     def run_epoch_pretrain(self, sess):
         # PRETRAINING TRAIN LOOP
@@ -81,7 +79,6 @@ class DeepSleepNet:
 
     def train(self):
         with tf.Session() as sess:
-            #sess = tf_debug.LocalCLIDebugWrapperSession(sess, ui_type='readline')
             """
             Train Representation Learner (Pretraining)
             """
@@ -99,6 +96,7 @@ class DeepSleepNet:
             """
             Train Sequence Learner (Finetuning)
             """
+            print("Finetuning for {} Epochs.".format(FLAGS.num_epochs_finetune))
             self.run_epoch_finetune(sess)
             print("Evaluating Model...", end=" ")
             self.evaluate(sess)

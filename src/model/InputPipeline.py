@@ -48,11 +48,11 @@ class InputPipeline:
 
         for sf in self.seq_files:
             with open(sf) as f:
-                self.data_len += sum(1 for line in f)  # count total lines in all dataset
+                self.data_len += sum(1 for _ in f)  # count total lines in all dataset
         # Tfrecord files, used by representation learner
         self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
         missing_files = [f for f in self.seq_files if
-                         all(f.split("_")[0] not in id.split("_")[0] for id in self.pretrain_files)]
+                         all(f.split("_")[0] not in sid.split("_")[0] for sid in self.pretrain_files)]
         if len(missing_files) > 0:
             print("Not enough data files found in tfrecord format for optimized pretraining.")
             print("Creating missing tfrecord files...")
@@ -79,7 +79,8 @@ class InputPipeline:
     *
     """
 
-    def parse_fn(self, example):
+    @staticmethod
+    def parse_fn(example):
         # format of each training example
         example_fmt = {
             "signal": tf.FixedLenFeature((1, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch), tf.float32),
