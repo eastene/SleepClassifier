@@ -24,22 +24,21 @@ for f in npz_files:
     Y.append(data['y'])
     sampling_rate = data['fs']
 
-X, Y = np.vstack(X), np.hstack(Y)
-print("Pre Oversampling Label Counts {}".format(np.bincount(Y)))
-smt = RandomOverSampler()
-X_os, Y_os = smt.fit_sample(X, Y)
-print("Post Oversampling Label Counts {}".format(np.bincount(Y_os)))
+X_arr, Y_arr = np.vstack(X), np.hstack(Y)
+ros = RandomOverSampler()
+x_out, y_out = ros.fit_sample(X_arr, Y_arr)
 
-max_examples_per_file = 2048
-num_files = X_os.shape[0] // max_examples_per_file
-for i in range(num_files):
-    with tf.python_io.TFRecordWriter(str(i) + '_part.tfrecords') as tfwriter:
-        for j in range(max_examples_per_file):
+new_file_size = x_out.shape[0] // len(npz_files)
+leftovers = x_out.shape[0] % len(npz_files)
+for i, f in enumerate(npz_files):
+    with tf.python_io.TFRecordWriter(os.path.splitext(f)[0] + '.tfrecords') as tfwriter:
+        iter_range = new_file_size if i < len(npz_files) - 1 else new_file_size + leftovers
+        for j in range(iter_range):
             example = tf.train.Example(
                 features=tf.train.Features(
                     feature={
-                        'signal': tf.train.Feature(float_list=tf.train.FloatList(value=X_os[i*max_examples_per_file + j])),
-                        'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[Y_os[i*max_examples_per_file + j]])),
+                        'signal': tf.train.Feature(float_list=tf.train.FloatList(value=x_out[i * new_file_size + j, :])),
+                        'label': tf.train.Feature(int64_list=tf.train.Int64List(value=[y_out[i * new_file_size + j]])),
                         'sampling_rate': tf.train.Feature(float_list=tf.train.FloatList(value=[sampling_rate]))
                     }
                 )

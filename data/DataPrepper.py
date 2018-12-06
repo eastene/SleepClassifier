@@ -94,7 +94,6 @@ class DataPrepper:
         # load all data
         X = []
         Y = []
-        sizes = []
 
         for f in files:
             data = np.load(f)
@@ -102,37 +101,36 @@ class DataPrepper:
             y = data['y']
             X.append(x.astype(dtype=np.float32))
             Y.append(y.astype(dtype=np.int32))
-            sizes.append(x.shape[0])
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
+        ros = RandomOverSampler()
         if FLAGS.oversample:
-            print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
             # TODO find way to pipeling ROS without reading in entire dataset first
-            ros = RandomOverSampler()
-            X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
-            print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
+            x_out, y_out = ros.fit_sample(X_s, Y_s)
         else:
-            X_tmp, Y_tmp = X_s, Y_s
+            x_out, y_out = X_s, Y_s
+
+        new_file_size = x_out.shape[0] // len(files)
+        leftovers = x_out.shape[0] % len(files)
 
         print("Writing to tfrecords...", end=" ")
-        offset = 0
         for i, f in enumerate(files):
             out_str = os.path.splitext(os.path.basename(f))[0] + (
                 ".oversampled" if FLAGS.oversample else "") + '.tfrecords'
             with tf.python_io.TFRecordWriter(os.path.join(FLAGS.tfrecord_dir, out_str)) as tfwriter:
-                for j in range(sizes[i]):
+                iter_range = new_file_size if i < len(files) - 1 else new_file_size + leftovers
+                for j in range(iter_range):
                     example = tf.train.Example(
                         features=tf.train.Features(
                             feature={
                                 'signal': tf.train.Feature(
-                                    float_list=tf.train.FloatList(value=X_tmp[offset + j, :])),
+                                    float_list=tf.train.FloatList(value=x_out[i * new_file_size + j, :])),
                                 'label': tf.train.Feature(
-                                    int64_list=tf.train.Int64List(value=[Y_tmp[offset + j]]))
+                                    int64_list=tf.train.Int64List(value=[y_out[i * new_file_size + j]]))
                             }
                         )
                     )
                     tfwriter.write(example.SerializeToString())
-            offset += sizes[i]
         print("Done.")
 
     def find_missing(self, file_set1, file_set2):

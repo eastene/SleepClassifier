@@ -187,13 +187,9 @@ class InputPipeline:
         return dataset
 
     def get_next_seq(self, file):
-        data = np.loadtxt(file, delimiter=',')
-        data[data == np.inf] = 0
-        data[data == -np.inf] = 0
-        x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-        if FLAGS.resample_rate > 0:
-            x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
-        y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch] - 1
+        data = np.load(file)
+        x = data['x']
+        y = data['y']
 
         return self.batch_seq_data(x, y)
 
