@@ -56,7 +56,7 @@ class DeepSleepNet:
 
     def run_epoch_finetune(self, sess):
         # FINETUNING TRAIN LOOP
-        for epoch in range(FLAGS.num_epochs_pretrain):
+        for epoch in range(FLAGS.num_epochs_finetune):
             self.input.initialize_train(sequential=True)
             cost = 0.0
             n_batches = 0
@@ -90,8 +90,7 @@ class DeepSleepNet:
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
 
-            train_writer = tf.summary.FileWriter('train',
-                                                 sess.graph)
+            train_writer = tf.summary.FileWriter('train', sess.graph)
             train_writer.add_graph(tf.get_default_graph())
             """
             Train Sequence Learner (Finetuning)

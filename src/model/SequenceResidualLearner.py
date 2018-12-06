@@ -17,7 +17,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.seq_learning_rate = FLAGS.learn_rate_fine
+        self.seq_learning_rate = FLAGS.learn_rate_pre  # uses higher learning rate for the sequence learner
         self.lstm_size = 512
         # self.num_lstm_layer = 2  unused
 
@@ -127,7 +127,7 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def train(self, sess, data):
         self.mode = "TRAIN"
-        self.learning_rate = FLAGS.learn_rate_fine
+        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the featurizer
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
