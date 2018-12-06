@@ -28,7 +28,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
-        with tf.name_scope("seq") as _:
+        with tf.name_scope("seq_learner") as seq_learner:
             self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
             self.seq_batch_size = FLAGS.sequence_batch_size
 
@@ -98,14 +98,14 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Train
             """
-            # full model (rep learner + seq rep leaner)
+            # full model (rep learner + seqs rep leaner)
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
             self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
                                                         name="seq_opt")
-            self.seq_train_op = self.optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
-                                                        name="seq_train",
-                                                        var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
-                                                                                   scope='seq'))
+            self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
+                                                        name="seq_train")#,
+                                                        #var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                         #                          scope='seq_learner'))
         """
         Eval
         """

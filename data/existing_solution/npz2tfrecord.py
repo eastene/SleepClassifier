@@ -16,12 +16,12 @@ for f in npz_files:
     # generate new filename with .tfrecords extension
     filename = ntpath.basename(f)
     base, ext = os.path.splitext(filename)
-    print("Writing " + base + '.tfrecord')
+    print("Writing " + base + '.tfrecords')
 
     signals = data['x']
     labels = data['y']
 
-    with tf.python_io.TFRecordWriter(base + '.tfrecord') as tfwriter:
+    with tf.python_io.TFRecordWriter(base + '.tfrecords') as tfwriter:
 
         for i in range(data['x'].shape[0]):
             example = tf.train.Example(

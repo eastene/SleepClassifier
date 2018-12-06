@@ -56,11 +56,19 @@ tf.flags.DEFINE_string("data_dir",
                        os.path.abspath(
                            os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
                        "Path to directory containing data files")
+tf.flags.DEFINE_string("seq_dir",
+                       os.path.abspath(
+                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
+                                        "data/seqs/")),
+                       "Path to directory containing sequence data as compressed numpy files")
 tf.flags.DEFINE_string("tfrecord_dir",
                        os.path.abspath(
-                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
-                       "Path to directory containing data in .tfrecord format "
+                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
+                                        "data/tfrecords/")),
+                       "Path to directory containing data in .tfrecords format "
                        "for pretraining (if different from data_dir)")
+tf.flags.DEFINE_string("meta_dir", os.path.dirname(os.path.realpath(__file__)),
+                       "Path to directory containing data meta info")
 tf.flags.DEFINE_bool("oversample", True, "whether to oversample input to the representation learner, "
                                          "requires rebuilding the tfrecords if altered")
 tf.flags.DEFINE_float("test_split", 0.3,
@@ -81,3 +89,4 @@ tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
 FLAGS = tf.flags.FLAGS
 
 EFFECTIVE_SAMPLE_RATE = FLAGS.sampling_rate // max(FLAGS.resample_rate, 1)
+META_INFO_FNAME = 'meta_info.npz'

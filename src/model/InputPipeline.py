@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from os import path
-from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE, META_INFO_FNAME
 from data.DataPrepper import DataPrepper
 
 
@@ -27,37 +27,103 @@ class InputPipeline:
         before generating the next set of training examples.
         """
 
+        # States
+        self.has_masters = True
+        self.has_meta_info = True
+        self.has_seq_files = True
+        self.has_tfrecords = True
+
         # Directories and file patterns
         self.data_len = 0
+        self.meta_dir = FLAGS.meta_dir
         self.data_dir = FLAGS.data_dir
         self.tfrecord_dir = FLAGS.tfrecord_dir
-        self.tf_pattern = "*.tfrecord"
-        self.seq_pattern = FLAGS.file_pattern
+        self.seq_dir = FLAGS.seq_dir
+        self.master_pattern = "*.csv"
+        self.tf_pattern = "*.tfrecords"
+        self.seq_pattern = '*.npz'
         self.prepper = DataPrepper()
 
-        # Signal files, used by sequence learner
-        self.seq_files = glob.glob(path.join(self.data_dir, self.seq_pattern))
+        """
+        Step 1: Check for master copies (.csv)
+        """
+        self.master_files = glob.glob(path.join(self.data_dir, self.master_pattern))
+        if len(self.master_files) == 0:
+            print("No master data files found, checking for numpy data...")
+            self.has_masters = False
+
+        """
+        Step 2: Check meta-info
+        """
+        if not path.isfile(path.join(self.meta_dir, META_INFO_FNAME)):
+            self.has_meta_info = False
+        else:
+            self.prepper.load_meta_info()
+
+        """
+        Step 3: Check for numpy compressed array files
+        """
+        # Signal files, used by sequence learner, must be in order by sample
+        self.seq_files = glob.glob(path.join(self.seq_dir, self.seq_pattern))
         if len(self.seq_files) == 0:
-            print("No data files found matching {} in {}! Terminating.".format(self.seq_pattern, self.data_dir))
-            exit(1)
+            print("No sequence data files found...")
+            self.has_seq_files = False
+
+            if not self.has_masters:
+                print("No viable data found for training!")
+                exit(1)
+
+            else:
+                print("Generating sequence files from master files...")
+                self.prepper.csv2npz(self.master_files)
+                self.has_seq_files = True
+                self.has_meta_info = True
+
+        elif len(self.seq_files) != len(self.master_files):
+            print("Missing some sequence files, generating...")
+            missing_files = self.prepper.find_missing(self.master_files, self.seq_files)
+            self.prepper.csv2npz(missing_files)
+            # leave has_meta_info false if already false, since it will now be invalid anyway
+
         # if only 1 sequence file, test/train split cannot be used as normal (will truncate sleep/wake cycle)
         elif len(self.seq_files) == 1 and input("Only 1 input file detected! Train and test on "
                                                 "same file (otherwise, split file manually)? (y/n): ").lower() != 'y':
             print("Terminating")
             exit(1)
+        elif not self.has_masters:
+            print("Continuing without master records (cannot downsample if required)")
 
-        for sf in self.seq_files:
-            with open(sf) as f:
-                self.data_len += sum(1 for _ in f)  # count total lines in all dataset
-        # Tfrecord files, used by representation learner
-        self.pretrain_files = glob.glob(path.join(self.data_dir, self.tf_pattern))
-        missing_files = [f for f in self.seq_files if
-                         all(f.split("_")[0] not in sid.split("_")[0] for sid in self.pretrain_files)]
-        if len(missing_files) > 0:
-            print("Not enough data files found in tfrecord format for optimized pretraining.")
-            print("Creating missing tfrecord files...")
-            self.prepper.convert2tfrecord(missing_files)
+        """
+        Step 4: Check for tfrecords files
+        """
+        # Examples used by feature representation learner, can be in random order
+        self.pretrain_files = glob.glob(path.join(self.tfrecord_dir, self.tf_pattern))
 
+        if len(self.pretrain_files) == 0:
+            print("No tfrecord files found for pretraining. Generating...")
+            self.prepper.npz2tfrecord(self.seq_files)
+
+        else:
+            missing_files = self.prepper.find_missing(self.pretrain_files, self.seq_files)
+            if len(missing_files) > 0:
+                print("Not enough data files found in tfrecords format for optimized pretraining.")
+                print("Creating missing tfrecords files...")
+                self.prepper.npz2tfrecord(missing_files)
+
+        """
+        Step 5: Fill in pipeline meta-info
+        """
+
+        if not self.has_meta_info:
+            for sf in self.seq_files:
+                with open(sf) as f:
+                    self.data_len += sum(1 for _ in f)  # count total lines in all dataset
+        else:
+            self.data_len = self.prepper.get_rows()
+
+        """
+        Step 6: Define pipeline functionality
+        """
         # Pretrain input
         self.pretrain_dataset = self.input_fn()
         num_batches = self.data_len // FLAGS.batch_size
@@ -66,7 +132,7 @@ class InputPipeline:
         self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
 
         # Finetune input
-        test_split = max(1, int(len(self.seq_files) * (1 - FLAGS.test_split))) if len(self.seq_files) > 1 else 0
+        test_split = max(1, int(len(self.seq_files) * FLAGS.test_split)) if len(self.seq_files) > 1 else 0
         self.train_seqs = self.seq_files[:test_split]
         self.eval_seqs = self.seq_files[test_split:]
         self.train_seq_idx = 0  # tracks current train sequence

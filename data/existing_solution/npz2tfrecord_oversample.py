@@ -33,7 +33,7 @@ print("Post Oversampling Label Counts {}".format(np.bincount(Y_os)))
 max_examples_per_file = 2048
 num_files = X_os.shape[0] // max_examples_per_file
 for i in range(num_files):
-    with tf.python_io.TFRecordWriter(str(i) + '_part.tfrecord') as tfwriter:
+    with tf.python_io.TFRecordWriter(str(i) + '_part.tfrecords') as tfwriter:
         for j in range(max_examples_per_file):
             example = tf.train.Example(
                 features=tf.train.Features(
