@@ -24,7 +24,7 @@ tf.flags.DEFINE_integer("prefetch_buffer_size", 100,
 *
 """
 tf.flags.DEFINE_integer("num_epochs_pretrain", 100, "number of epochs for pre-training")
-tf.flags.DEFINE_integer("batch_size", 1, "batch size")
+tf.flags.DEFINE_integer("batch_size", 100, "batch size")
 tf.flags.DEFINE_float("learn_rate_pre", 0.0001, "learning rate for pretraining")
 
 """
@@ -83,7 +83,7 @@ tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the inp
 * Output Flags
 *
 """
-tf.flags.DEFINE_bool("confsn_mat", False, "print confusion matrix on last evaluation after training model")
+tf.flags.DEFINE_bool("cnfsn_mat", False, "print confusion matrix on last evaluation after training model")
 tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
 
 FLAGS = tf.flags.FLAGS

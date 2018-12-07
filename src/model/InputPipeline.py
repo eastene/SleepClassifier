@@ -116,8 +116,8 @@ class InputPipeline:
 
         if not self.has_meta_info:
             for sf in self.seq_files:
-                with open(sf) as f:
-                    self.data_len += sum(1 for _ in f)  # count total lines in all dataset
+                with np.load(sf) as f:
+                    self.data_len += f['x'].shape[0]  # count total lines in all dataset
         else:
             self.data_len = self.prepper.get_rows()
 

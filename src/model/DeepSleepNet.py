@@ -100,7 +100,7 @@ class DeepSleepNet:
             print("Evaluating Model...", end=" ")
             self.evaluate(sess)
 
-            if FLAGS.confsn_mat:
+            if FLAGS.cnfsn_mat:
                 self.print_confusion_matrix(sess)
             if FLAGS.plot_loss:
                 self.plot_loss()

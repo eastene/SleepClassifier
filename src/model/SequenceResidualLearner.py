@@ -102,6 +102,7 @@ class SequenceResidualLearner(RepresentationLearner):
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
             self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
                                                         name="seq_opt")
+            # TODO: make sure this is only training
             self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
                                                         name="seq_train")#,
                                                         #var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
