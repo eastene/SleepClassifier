@@ -1,6 +1,7 @@
 import glob
 import numpy as np
 import tensorflow as tf
+import random as rand
 
 from os import path
 from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE, META_INFO_FNAME
@@ -56,6 +57,7 @@ class InputPipeline:
         Step 2: Check meta-info
         """
         if not path.isfile(path.join(self.meta_dir, META_INFO_FNAME)):
+            print("No meta data file found. Sampling rates may not match. Continuing...")
             self.has_meta_info = False
         else:
             self.prepper.load_meta_info()
@@ -79,19 +81,20 @@ class InputPipeline:
                 self.has_seq_files = True
                 self.has_meta_info = True
 
-        elif len(self.seq_files) != len(self.master_files):
+        elif self.has_masters and (len(self.seq_files) != len(self.master_files)):
             print("Missing some sequence files, generating...")
             missing_files = self.prepper.find_missing(self.master_files, self.seq_files)
             self.prepper.csv2npz(missing_files)
             # leave has_meta_info false if already false, since it will now be invalid anyway
 
+        elif not self.has_masters:
+            print("Continuing without master records (cannot downsample if required)")
+
         # if only 1 sequence file, test/train split cannot be used as normal (will truncate sleep/wake cycle)
-        elif len(self.seq_files) == 1 and input("Only 1 input file detected! Train and test on "
+        if len(self.seq_files) == 1 and input("Only 1 input file detected! Train and test on "
                                                 "same file (otherwise, split file manually)? (y/n): ").lower() != 'y':
             print("Terminating")
             exit(1)
-        elif not self.has_masters:
-            print("Continuing without master records (cannot downsample if required)")
 
         """
         Step 4: Check for tfrecords files
@@ -128,6 +131,8 @@ class InputPipeline:
         self.pretrain_dataset = self.input_fn()
         num_batches = self.data_len // FLAGS.batch_size
         test_split_batches = int(num_batches * FLAGS.test_split)
+
+        print(test_split_batches)
         self.train_iter = self.pretrain_dataset.skip(test_split_batches).make_initializable_iterator()
         self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
 
@@ -224,12 +229,14 @@ class InputPipeline:
 
     def initialize_train(self, sequential=False):
         if sequential:
+            rand.shuffle(self.train_seqs)
             self.train_seq_idx = 0
             return None
         return self.train_iter.initializer
 
     def initialize_eval(self, sequential=False):
         if sequential:
+            rand.shuffle(self.eval_seqs)
             self.eval_seq_idx = 0
             return None
         return self.eval_iter.initializer

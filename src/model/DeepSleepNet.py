@@ -182,6 +182,7 @@ class DeepSleepNet:
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss (Cross Entropy)')
         ax2.set_title('Sequence Residual Learning')
+        plt.show()
 
 
 def main(unused_argv):
