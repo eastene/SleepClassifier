@@ -30,9 +30,7 @@ class DeepSleepNet:
 
         # loss arrays for plotting loss over time
         self.loss_tr_pre = np.empty(FLAGS.num_epochs_pretrain)
-        self.loss_ts_pre = np.empty(FLAGS.num_epochs_pretrain)
         self.loss_tr_fine = np.empty(FLAGS.num_epochs_finetune)
-        self.loss_ts_fine = np.empty(FLAGS.num_epochs_finetune)
 
     def run_epoch_pretrain(self, sess):
         # PRETRAINING TRAIN LOOP
@@ -54,6 +52,8 @@ class DeepSleepNet:
                 print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
                 self.seq_learn.checkpoint(sess)
 
+            self.loss_tr_pre[epoch] = cost / n_batches
+
     def run_epoch_finetune(self, sess):
         # FINETUNING TRAIN LOOP
         for epoch in range(FLAGS.num_epochs_finetune):
@@ -67,7 +67,7 @@ class DeepSleepNet:
                     seq_data = self.next_elem_train_fine(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     for batch in seq_data:
-                        _, c = self.seq_learn.train(sess, batch)
+                        _, c= self.seq_learn.train(sess, batch)
                         cost += c
                         n_batches += 1
             except tf.errors.OutOfRangeError:
@@ -76,6 +76,8 @@ class DeepSleepNet:
             if epoch % 3 == 0:
                 print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
                 self.seq_learn.checkpoint(sess)
+
+            self.loss_tr_fine[epoch] = cost / n_batches
 
     def train(self):
         with tf.Session() as sess:
@@ -173,12 +175,10 @@ class DeepSleepNet:
     def plot_loss(self):
         fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
         ax1.plot(range(1, FLAGS.num_epochs_pretrain + 1), self.loss_tr_pre)
-        ax1.plot(range(1, FLAGS.num_epochs_pretrain + 1), self.loss_ts_pre)
         ax1.set_xlabel('Epoch')
         ax1.set_ylabel('Loss (Cross Entropy)')
         ax1.set_title('Representation Learning')
         ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_tr_fine)
-        ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_ts_fine)
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss (Cross Entropy)')
         ax2.set_title('Sequence Residual Learning')

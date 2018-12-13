@@ -96,6 +96,9 @@ class InputPipeline:
             print("Terminating")
             exit(1)
 
+        # reglob to capture any updates that may have been made
+        self.seq_files = glob.glob(path.join(self.seq_dir, self.seq_pattern))
+
         """
         Step 4: Check for tfrecords files
         """
@@ -112,7 +115,8 @@ class InputPipeline:
                 print("Not enough data files found in tfrecords format for optimized pretraining.")
                 print("Creating missing tfrecords files...")
                 self.prepper.npz2tfrecord(missing_files)
-
+        # reglob to capture any updates that may have been made
+        self.pretrain_files = glob.glob(path.join(self.tfrecord_dir, self.tf_pattern))
         """
         Step 5: Fill in pipeline meta-info
         """

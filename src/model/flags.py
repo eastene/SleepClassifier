@@ -34,7 +34,7 @@ tf.flags.DEFINE_float("learn_rate_pre", 0.0001, "learning rate for pretraining")
 """
 tf.flags.DEFINE_integer("num_epochs_finetune", 200, "number of epochs for fine tuning")
 tf.flags.DEFINE_integer("sequence_batch_size", 10, "batch size used in finetuning on sequence data")
-tf.flags.DEFINE_integer("sequence_length", 14, "length of each sequence fed into the LSTM from the sequence data")
+tf.flags.DEFINE_integer("sequence_length", 25, "length of each sequence fed into the LSTM from the sequence data")
 tf.flags.DEFINE_float("learn_rate_fine", 0.000001, "learning rate for pretraining")
 
 """

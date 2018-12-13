@@ -73,6 +73,7 @@ class SequenceResidualLearner(RepresentationLearner):
                 initial_state_bw=self.initial_states_bw
             )
 
+            # concatenate forward and backward lstm outputs
             self.bd_lstm_out = tf.concat(self.bd_lstm, 1)
 
             """
