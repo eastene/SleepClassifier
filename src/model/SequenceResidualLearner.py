@@ -59,19 +59,23 @@ class SequenceResidualLearner(RepresentationLearner):
             self.bw_cell = tf.nn.rnn_cell.MultiRNNCell([self.bw_lstm_cell_1, self.bw_lstm_cell_2],
                                                        state_is_tuple=True)
 
-            self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
-            self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            self.states = self.get_state_variables([self.fw_cell, self.bw_cell])
+
+            #self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            #self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
 
             # states are dropped after training on each sample so that the states from
             # one sample does not influence those of another
             # dynamic RNN chosen to train on GPUs with smaller memories
-            self.bd_lstm, self.states = tf.nn.bidirectional_dynamic_rnn(
+            self.bd_lstm, self.new_states = tf.nn.bidirectional_dynamic_rnn(
                 inputs=self.input_seqs,
                 cell_fw=self.fw_cell,
                 cell_bw=self.bw_cell,
-                initial_state_fw=self.initial_states_fw,
-                initial_state_bw=self.initial_states_bw
+                initial_state_fw=self.states[0],
+                initial_state_bw=self.states[1]
             )
+
+            self.update_op = self.get_state_update_op(self.states, self.new_states)
 
             # concatenate forward and backward lstm outputs
             self.bd_lstm_out = tf.concat(self.bd_lstm, 1)
@@ -124,8 +128,41 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
 
+    def get_state_variables(self, cells):
+        # For each layer, get the initial state and make a variable out of it
+        # to enable updating its value.
+        states = []
+        for cell in cells:
+            state_variables = []
+            for state_c, state_h in cell.zero_state(self.seq_batch_size, tf.float32):
+                state_variables.append(tf.contrib.rnn.LSTMStateTuple(
+                    tf.Variable(state_c, trainable=False),
+                    tf.Variable(state_h, trainable=False)))
+            # Return as a tuple, so that it can be fed to dynamic_rnn as an initial state
+            states.append(tuple(state_variables))
+        return states
+
+    def get_state_update_op(self, cell_states, new_cell_states):
+        # Add an operation to update the train states with the last state tensors
+        update_ops = []
+        for state_variables, new_states in zip(cell_states, new_cell_states):
+            for state_variable, new_state in zip(state_variables, new_states):
+                # Assign the new state to the state variables on this layer
+                update_ops.extend([state_variable[0].assign(new_state[0]),
+                                   state_variable[1].assign(new_state[1])])
+        # Return a tuple in order to combine all update_ops into a single operation.
+        # The tuple's actual value should not be used.
+        return tf.tuple(update_ops)
+
     def pretrain(self, sess, data):
         return super(SequenceResidualLearner, self).train(sess, data)
+
+    def reset_lstm_state(self, sess):
+        zero_states = [
+            self.fw_cell.zero_state(self.seq_batch_size, tf.float32),
+            self.bw_cell.zero_state(self.seq_batch_size, tf.float32)
+        ]
+        return sess.run(self.get_state_update_op(self.states, zero_states))
 
     def train(self, sess, data):
         self.mode = "TRAIN"
@@ -134,7 +171,7 @@ class SequenceResidualLearner(RepresentationLearner):
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_train_op, self.seq_loss], feed_dict=feed_dict)
+        return sess.run([self.seq_train_op, self.seq_loss, self.update_op], feed_dict=feed_dict)
 
     def evaluate_rep_learner(self, sess, data):
         return super(SequenceResidualLearner, self).evaluate(sess, data)
@@ -145,7 +182,7 @@ class SequenceResidualLearner(RepresentationLearner):
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_eval_op], feed_dict=feed_dict)
+        return sess.run([self.seq_eval_op, self.update_op], feed_dict=feed_dict)
 
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner

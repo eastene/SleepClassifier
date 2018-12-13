@@ -66,8 +66,9 @@ class DeepSleepNet:
                 while True:
                     seq_data = self.next_elem_train_fine(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
+                    self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
-                        _, c= self.seq_learn.train(sess, batch)
+                        _, c, _= self.seq_learn.train(sess, batch)
                         cost += c
                         n_batches += 1
             except tf.errors.OutOfRangeError:
@@ -138,8 +139,9 @@ class DeepSleepNet:
                 while True:
                     seq_data = self.next_elem_eval_fine(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
+                    self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
-                        m = self.seq_learn.evaluate(sess, batch)
+                        m, _ = self.seq_learn.evaluate(sess, batch)
                         n_batches += 1
                         m_tot += m[0]
 
