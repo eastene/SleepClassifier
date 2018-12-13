@@ -136,7 +136,6 @@ class InputPipeline:
         num_batches = self.data_len // FLAGS.batch_size
         test_split_batches = int(num_batches * FLAGS.test_split)
 
-        print(test_split_batches)
         self.train_iter = self.pretrain_dataset.skip(test_split_batches).make_initializable_iterator()
         self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
 

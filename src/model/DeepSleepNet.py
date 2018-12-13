@@ -126,8 +126,8 @@ class DeepSleepNet:
                     m_l, m_s = self.seq_learn.eval_branches(sess, data)
                     n_batches += 1
                     m_tot += m[0]
-                    m_tot_l += m_l[0]
-                    m_tot_s += m_s[0]
+                    m_tot_l += m_l
+                    m_tot_s += m_s
 
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch
