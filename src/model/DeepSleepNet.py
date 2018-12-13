@@ -68,7 +68,7 @@ class DeepSleepNet:
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
-                        _, c, _= self.seq_learn.train(sess, batch)
+                        _, c, _ = self.seq_learn.train(sess, batch)
                         cost += c
                         n_batches += 1
             except tf.errors.OutOfRangeError:
