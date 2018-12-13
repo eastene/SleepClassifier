@@ -12,7 +12,7 @@ class DeepSleepNet:
 
     def __init__(self):
         # hyper-parameters
-        self.n_folds = 20
+        # self.n_folds = 20
         self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
         # model
@@ -93,8 +93,9 @@ class DeepSleepNet:
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
 
-            train_writer = tf.summary.FileWriter('train', sess.graph)
-            train_writer.add_graph(tf.get_default_graph())
+            # train_writer = tf.summary.FileWriter('train', sess.graph)
+            # train_writer.add_graph(tf.get_default_graph())
+
             """
             Train Sequence Learner (Finetuning)
             """
@@ -112,6 +113,8 @@ class DeepSleepNet:
         if rep_only:
             # PRETRAINING EVAL LOOP
             m_tot = 0
+            m_tot_l = 0
+            m_tot_s = 0
             n_batches = 0
             sess.run(self.input.initialize_eval())
 
@@ -120,13 +123,18 @@ class DeepSleepNet:
                 while True:
                     data = sess.run(self.next_elem_eval_pre)
                     m = self.seq_learn.evaluate_rep_learner(sess, data)
+                    m_l, m_s = self.seq_learn.eval_branches(sess, data)
                     n_batches += 1
                     m_tot += m[0]
+                    m_tot_l += m_l[0]
+                    m_tot_s += m_s[0]
 
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch
 
             print("Representation Learner Accuracy: {}".format(m_tot / n_batches))
+            print("Large-Filter Branch Accuracy: {}".format(m_tot_l / n_batches))
+            print("Small-Filter Branch Accuracy: {}".format(m_tot_s / n_batches))
 
         else:
             # FINETUNING EVAL LOOP
@@ -190,8 +198,6 @@ class DeepSleepNet:
 def main(unused_argv):
     dn = DeepSleepNet()
     dn.train()
-    dn.plot_loss()
-    # fine_tune(tf.estimator.ModeKeys.TRAIN)
 
 
 if __name__ == "__main__":

@@ -154,6 +154,19 @@ class RepresentationLearner:
         self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=4, strides=4)
 
         """
+        CNN Branch Evaluation
+        """
+        large_output = tf.layers.flatten(self.pool_2_large)
+        large_logits = tf.layers.dense(inputs=large_output, units=5, name='large_logits')
+        large_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(large_logits, axis=1))
+        self.large_eval = tf.reduce_mean(tf.cast(large_correct_classes, tf.float32))
+
+        small_output = tf.layers.flatten(self.pool_2_small)
+        small_logits = tf.layers.dense(inputs=small_output, units=5, name='small_logits')
+        small_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(small_logits, axis=1))
+        self.small_eval = tf.reduce_mean(tf.cast(small_correct_classes, tf.float32))
+
+        """
         CNN Output Layer
         """
         # Concatenate both outputs and flatten
@@ -222,3 +235,11 @@ class RepresentationLearner:
         else:
             print("No Representation Learner found at: {}. Initializing.".format(self.rep_learn_dir))
             sess.run(tf.global_variables_initializer())
+
+    def eval_branches(self, sess, data):
+        self.mode = "EVAL"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
+        return sess.run([self.large_eval, self.small_eval], feed_dict=feed_dict)
