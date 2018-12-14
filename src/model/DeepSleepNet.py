@@ -93,8 +93,8 @@ class DeepSleepNet:
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
 
-            # train_writer = tf.summary.FileWriter('train', sess.graph)
-            # train_writer.add_graph(tf.get_default_graph())
+            train_writer = tf.summary.FileWriter('train', sess.graph)
+            train_writer.add_graph(tf.get_default_graph())
 
             """
             Train Sequence Learner (Finetuning)
@@ -151,7 +151,7 @@ class DeepSleepNet:
                     for batch in seq_data:
                         m, _ = self.seq_learn.evaluate(sess, batch)
                         n_batches += 1
-                        m_tot += m[0]
+                        m_tot += m
 
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch

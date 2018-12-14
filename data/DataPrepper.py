@@ -97,7 +97,7 @@ class DataPrepper:
 
         for f in files:
             data = np.load(f)
-            x = data['x']
+            x = np.squeeze(data['x'])
             y = data['y']
             X.append(x.astype(dtype=np.float32))
             Y.append(y.astype(dtype=np.int32))

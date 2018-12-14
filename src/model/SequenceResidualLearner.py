@@ -28,7 +28,7 @@ class SequenceResidualLearner(RepresentationLearner):
         self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
-        with tf.name_scope("seq_learner") as seq_learner:
+        with tf.variable_scope("seq_learner") as seq_learner:
             self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
             self.seq_batch_size = FLAGS.sequence_batch_size
 
@@ -61,8 +61,8 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.states = self.get_state_variables([self.fw_cell, self.bw_cell])
 
-            #self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
-            #self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            # self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            # self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
 
             # states are dropped after training on each sample so that the states from
             # one sample does not influence those of another
@@ -107,26 +107,31 @@ class SequenceResidualLearner(RepresentationLearner):
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
             self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
                                                         name="seq_opt")
-            # TODO: make sure this is only training
-            self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
-                                                        name="seq_train")#,
-                                                        #var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
-                                                         #                          scope='seq_learner'))
-        """
-        Eval
-        """
-        self.seq_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(self.seq_logits, axis=1))
-        self.seq_eval_op = tf.reduce_mean(tf.cast(self.seq_correct_classes, tf.float32), name="seq_eval")
+            # TODO: make sure this is only training parts it is meant to train
+            self.gvs = self.seq_optimiser.compute_gradients(self.seq_loss, var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                                       scope='seq_learner'))
+            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in self.gvs]
+            self.seq_train_op = self.seq_optimiser.apply_gradients(self.capped_gvs)
+            #self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
+            #                                                name="seq_train",
+            #                                                var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+            #                                                                           scope='seq_learner'))
 
-        """
-        Predict
-        """
-        self.seq_pred_classes = tf.argmax(self.seq_logits, axis=1)
+            """
+            Eval
+            """
+            self.seq_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(self.seq_logits, axis=1))
+            self.seq_eval_op = tf.reduce_mean(tf.cast(self.seq_correct_classes, tf.float32), name="seq_eval")
 
-        """
-        Save & Restore
-        """
-        self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
+            """
+            Predict
+            """
+            self.seq_pred_classes = tf.argmax(self.seq_logits, axis=1)
+
+            """
+            Save & Restore
+            """
+            self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
 
     def get_state_variables(self, cells):
         # For each layer, get the initial state and make a variable out of it

@@ -171,7 +171,7 @@ class InputPipeline:
 
         # interleave reading of dataset for parallel I/O
         dataset = files.apply(
-            tf.contrib.data.parallel_interleave(
+            tf.data.experimental.parallel_interleave(
                 tf.data.TFRecordDataset, cycle_length=FLAGS.num_parallel_readers
             )
         )
@@ -183,7 +183,7 @@ class InputPipeline:
 
         # parse the data and prepares the batches in parallel (helps most with larger batches)
         dataset = dataset.apply(
-            tf.contrib.data.map_and_batch(
+            tf.data.experimental.map_and_batch(
                 map_func=self.parse_fn, batch_size=FLAGS.batch_size
             )
         )
