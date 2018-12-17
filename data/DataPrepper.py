@@ -14,14 +14,20 @@ class DataPrepper:
             'fs': FLAGS.sampling_rate,
             'rs': FLAGS.resample_rate,
             'rows': 0,
-            'nfiles': 0
+            'nfiles': 0,
+            'nchs': len(FLAGS.input_chs)
         }
 
     def load_meta_info(self):
         temp_meta = np.load(os.path.join(FLAGS.meta_dir, META_INFO_FNAME))
         temp_meta = temp_meta['a'][()]
+
         if self.meta['fs'] * self.meta['rs'] != temp_meta['fs'] * temp_meta['rs']:
             print("Error: Effective sampling rate of data does not match rate indicated by flags!")
+            print("Exiting.")
+            exit(1)
+        if self.meta['nchs'] != temp_meta['nchs']:
+            print("Error: Number of channels does not match channels indicated by flags!")
             print("Exiting.")
             exit(1)
 

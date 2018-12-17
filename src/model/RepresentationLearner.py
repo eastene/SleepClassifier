@@ -24,11 +24,13 @@ class RepresentationLearner:
         self.x = tf.placeholder(dtype=tf.float32)
         self.y = tf.placeholder(dtype=tf.int32)
         self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, len(FLAGS.input_chs)])
-
-        # with tf.variable_scope("REP_SCOPE") as scope:
+        # first channel is main input channel
+        self.main_input = tf.slice(self.input_layer, [0, 0, 0], [-1, -1, 0])
+        # second - Nth channels are separated signals
+        self.mixed_input = tf.slice(self.input_layer, [0, 0, 1], [-1, -1, -1])
 
         # Shared Conv Layers
-        self.batch_normalizer = tf.layers.batch_normalization(self.input_layer, epsilon=1e-5)
+        self.batch_normalizer = tf.layers.batch_normalization(self.main_input, epsilon=1e-5)
         self.l2_regulizer = l2_regularizer(0.001)
 
         """
@@ -154,6 +156,75 @@ class RepresentationLearner:
         self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=4, strides=4)
 
         """
+        Multi-Channel Learning
+        """
+
+        # Shared Conv Layers
+        self.batch_normalizer_mltch = tf.layers.batch_normalization(self.mixed_input, epsilon=1e-5)
+
+        """
+        Coarse-Grain Multi-Channel Convolutional Layers
+        """
+        # Conv Layer 1
+        self.conv_1_large_mltch = tf.layers.conv1d(
+            inputs=self.batch_normalizer_mltch,
+            filters=64,
+            kernel_size=self.sampling_rate * 4,
+            strides=self.sampling_rate // 2,
+            activation=tf.nn.relu,
+            padding='SAME',
+            kernel_regularizer=self.l2_regulizer,
+            name="conv1_large_mltch",
+            reuse=tf.AUTO_REUSE
+        )
+
+        # Max Pool Layer 1
+        self.pool_1_large_mltch = tf.layers.max_pooling1d(inputs=self.conv_1_large_mltch, pool_size=4, strides=4)
+
+        # Dropout
+        self.dropout_large_mltch = tf.layers.dropout(inputs=self.pool_1_large_mltch, rate=0.5, training=self.mode == "TRAIN")
+
+        # Conv Layer 2
+        self.conv_2_large_mltch = tf.layers.conv1d(
+            inputs=self.dropout_large_mltch,
+            filters=128,
+            kernel_size=6,
+            strides=1,
+            activation=tf.nn.relu,
+            padding='SAME',
+            name="conv2_large",
+            reuse=tf.AUTO_REUSE
+        )
+
+        # Conv Layer 3
+        self.conv_3_large_mltch = tf.layers.conv1d(
+            inputs=self.conv_2_large_mltch,
+            filters=128,
+            kernel_size=6,
+            strides=1,
+            activation=tf.nn.relu,
+            padding='SAME',
+            name="conv3_large",
+            reuse=tf.AUTO_REUSE
+        )
+
+        # Conv Layer 4
+        self.conv_4_large_mltch = tf.layers.conv1d(
+            inputs=self.conv_3_large_mltch,
+            filters=128,
+            kernel_size=6,
+            strides=1,
+            activation=tf.nn.relu,
+            padding='SAME',
+            name="conv4_large",
+            reuse=tf.AUTO_REUSE
+        )
+
+        # Max Pool Layer 2
+        self.pool_2_large_mltch = tf.layers.max_pooling1d(inputs=self.conv_4_large_mltch, pool_size=2, strides=2)
+
+
+        """
         CNN Branch Evaluation
         """
         large_output = tf.layers.flatten(self.pool_2_large)
@@ -166,11 +237,16 @@ class RepresentationLearner:
         small_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(small_logits, axis=1))
         self.small_eval = tf.reduce_mean(tf.cast(small_correct_classes, tf.float32))
 
+        mltch_output = tf.layers.flatten(self.pool_2_large_mltch)
+        mltch_logits = tf.layers.dense(inputs=mltch_output, units=5, name='mltch_logits')
+        mltch_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(mltch_logits, axis=1))
+        self.mltch_eval = tf.reduce_mean(tf.cast(mltch_correct_classes, tf.float32))
+
         """
         CNN Output Layer
         """
         # Concatenate both outputs and flatten
-        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large], axis=1)
+        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_2_large_mltch], axis=1)
         self.dropout = tf.layers.dropout(self.cnn_output, rate=0.5, training=self.mode == "TRAIN")
         self.output_layer = tf.layers.flatten(inputs=self.dropout)
 

@@ -25,7 +25,7 @@ class SequenceResidualLearner(RepresentationLearner):
         Input Layer
         """
         self.rep_learn = self.output_layer  # output of representation learner
-        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
+        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 3712)) # TODO: change back to 2816?
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
