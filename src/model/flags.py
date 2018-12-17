@@ -43,6 +43,9 @@ tf.flags.DEFINE_float("learn_rate_fine", 0.000001, "learning rate for pretrainin
 *
 """
 tf.flags.DEFINE_integer("sampling_rate", 2000, "sampling rate used to generate signal (hz)")
+tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the input signal")
+tf.flags.DEFINE_list("input_chs", 'eeg', "name of input channels (e.g. [eeg, eog] is 2 channels), input channel "
+                                         "name should appear in file name and be unique to that data type")
 tf.flags.DEFINE_integer("s_per_epoch", 30, "seconds of signal data considered as a single epoch")
 tf.flags.DEFINE_string("checkpoint_dir", os.path.join(os.path.dirname(os.path.realpath(__file__)), "tmp/"),
                        "directory in which to save model parameters while training")
@@ -76,7 +79,7 @@ tf.flags.DEFINE_float("test_split", 0.3,
                       "(signal epochs in pretraining and signal files in finetuning")
 tf.flags.DEFINE_string("file_pattern", "*.csv", "file pattern of data files containing original signals")
 tf.flags.DEFINE_integer("seq_buff_size", 15, "number of full sequences to keep in buffer at a time")
-tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the input signal")
+
 
 """
 *

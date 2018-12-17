@@ -24,6 +24,7 @@ class DataPrepper:
             print("Error: Effective sampling rate of data does not match rate indicated by flags!")
             print("Exiting.")
             exit(1)
+
         self.meta = temp_meta
 
     def csv2npz(self, files):
@@ -39,6 +40,36 @@ class DataPrepper:
                                 fs=EFFECTIVE_SAMPLE_RATE)
             rows += x.shape[0]
         self.meta['rows'] = rows
+        np.savez_compressed(os.path.join(FLAGS.meta_dir, os.path.splitext(META_INFO_FNAME)[0]), a=self.meta)
+
+    def csv2npz_mltch(self, files):
+        self.meta['nfiles'] += len(files) // len(FLAGS.input_chs)
+        rows = self.meta['rows']
+
+        files.sort()
+        files_by_channel = []
+        for ch in FLAGS.input_chs:
+            files_by_channel.append([f for f in files if ch in os.path.splitext(os.path.basename(f))[0]])
+
+        for chs in zip(*files_by_channel):
+            X = []
+            y = None
+            prefix = '_'.join(os.path.splitext(os.path.basename(chs[0]))[0].split("_")[:-1])
+            for ch in chs:
+                data = np.genfromtxt(ch, dtype=np.float32, delimiter=',', filling_values=[0])
+                x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+                y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
+                if FLAGS.resample_rate > 0:
+                    x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+                X.append(x)
+                y = y
+
+            X_arr = np.dstack(X)
+            np.savez_compressed(os.path.join(FLAGS.seq_dir, "{}_{}_ch".format(prefix, len(FLAGS.input_chs))), x=X_arr, y=y,
+                                fs=EFFECTIVE_SAMPLE_RATE)
+            rows += X_arr.shape[0]
+        self.meta['rows'] = rows
+        self.meta['chs'] = FLAGS.input_chs
         np.savez_compressed(os.path.join(FLAGS.meta_dir, os.path.splitext(META_INFO_FNAME)[0]), a=self.meta)
 
     def csv2tfrecord(self, files):
@@ -103,10 +134,19 @@ class DataPrepper:
             Y.append(y.astype(dtype=np.int32))
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
-        ros = RandomOverSampler()
         if FLAGS.oversample:
             # TODO find way to pipeling ROS without reading in entire dataset first
-            x_out, y_out = ros.fit_sample(X_s, Y_s)
+            counts = np.bincount(Y_s)
+            X_os = []
+            Y_os = []
+            max_count = max(counts)
+            for i, count in enumerate(counts):
+                inds = np.random.choice(count, size=max_count, replace=True)
+                Y_os.append(Y_s[Y_s == i][inds])
+                X_os.append(X_s[Y_s == i][inds])
+            x_out, y_out = np.vstack(X_os), np.hstack(Y_os)
+            #np.random.shuffle(x_out)
+            #np.random.shuffle(y_out)
         else:
             x_out, y_out = X_s, Y_s
 
@@ -124,7 +164,7 @@ class DataPrepper:
                         features=tf.train.Features(
                             feature={
                                 'signal': tf.train.Feature(
-                                    float_list=tf.train.FloatList(value=x_out[i * new_file_size + j, :])),
+                                    float_list=tf.train.FloatList(value=x_out[i * new_file_size + j].flatten())),
                                 'label': tf.train.Feature(
                                     int64_list=tf.train.Int64List(value=[y_out[i * new_file_size + j]]))
                             }

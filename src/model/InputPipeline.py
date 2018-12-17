@@ -77,14 +77,14 @@ class InputPipeline:
 
             else:
                 print("Generating sequence files from master files...")
-                self.prepper.csv2npz(self.master_files)
+                self.prepper.csv2npz_mltch(self.master_files)
                 self.has_seq_files = True
                 self.has_meta_info = True
 
-        elif self.has_masters and (len(self.seq_files) != len(self.master_files)):
+        elif self.has_masters and (len(self.seq_files) != len(self.master_files) // len(FLAGS.input_chs)):
             print("Missing some sequence files, generating...")
             missing_files = self.prepper.find_missing(self.master_files, self.seq_files)
-            self.prepper.csv2npz(missing_files)
+            self.prepper.csv2npz_mltch(missing_files)
             # leave has_meta_info false if already false, since it will now be invalid anyway
 
         elif not self.has_masters:
@@ -135,7 +135,6 @@ class InputPipeline:
         self.pretrain_dataset = self.input_fn()
         num_batches = self.data_len // FLAGS.batch_size
         test_split_batches = int(num_batches * FLAGS.test_split)
-
         self.train_iter = self.pretrain_dataset.skip(test_split_batches).make_initializable_iterator()
         self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
 
@@ -153,17 +152,16 @@ class InputPipeline:
     *
     """
 
-    @staticmethod
-    def parse_fn(example):
+    def parse_fn(self, example):
         # format of each training example
         example_fmt = {
-            "signal": tf.FixedLenFeature((1, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch), tf.float32),
-            "label": tf.FixedLenFeature((), tf.int64, -1)
+            "signal": tf.FixedLenFeature((1, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch * len(FLAGS.input_chs)), tf.float32),
+            "label": tf.FixedLenFeature((), tf.int64, default_value=-1)
         }
 
         parsed = tf.parse_single_example(example, example_fmt)
-
-        return parsed['signal'], parsed['label']
+        signals = tf.reshape(parsed['signal'], shape=(EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch, len(FLAGS.input_chs)))
+        return signals, parsed['label']
 
     def input_fn(self):
         print("Looking for data files matching: {}\nIn: {}".format(self.tf_pattern, self.tfrecord_dir))

@@ -15,7 +15,7 @@ class RepresentationLearner:
 
         # Hyperparameters
         self.mode = "TRAIN"  # default value, mutable, only used for dropout layers
-        self.learning_rate = FLAGS.learn_rate_pre
+        self.learning_rate = 0.0
 
         # Begin Define Model
         """
@@ -23,7 +23,7 @@ class RepresentationLearner:
         """
         self.x = tf.placeholder(dtype=tf.float32)
         self.y = tf.placeholder(dtype=tf.int32)
-        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, 1])
+        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, len(FLAGS.input_chs)])
 
         # with tf.variable_scope("REP_SCOPE") as scope:
 
@@ -182,9 +182,12 @@ class RepresentationLearner:
         Train
         """
         self.loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.logits)
-        self.optimiser = tf.train.AdamOptimizer(learning_rate=self.learning_rate, beta1=0.9, beta2=0.999)
+        self.optimiser = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_pre, beta1=0.9, beta2=0.999)
         self.train_op = self.optimiser.minimize(self.loss, global_step=tf.train.get_global_step())
 
+        self.optimiser_fine = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_fine, beta1=0.9, beta2=0.999,
+                                                     name='adam_fine')
+        self.train_op_fine = self.optimiser_fine.minimize(self.loss, global_step=tf.train.get_global_step())
         """
         Eval
         """
@@ -202,7 +205,6 @@ class RepresentationLearner:
         self.saver = tf.train.Saver()  # saves entire model
 
     def train(self, sess, data):
-        self.learning_rate = FLAGS.learn_rate_pre
         self.mode = "TRAIN"
         feed_dict = {
             self.x: data[0],

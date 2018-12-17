@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import confusion_matrix
+from sklearn.metrics import precision_recall_fscore_support
 
 from src.model.InputPipeline import InputPipeline
 from src.model.SequenceResidualLearner import SequenceResidualLearner
@@ -31,6 +32,7 @@ class DeepSleepNet:
         # loss arrays for plotting loss over time
         self.loss_tr_pre = np.empty(FLAGS.num_epochs_pretrain)
         self.loss_tr_fine = np.empty(FLAGS.num_epochs_finetune)
+        self.loss_tr_fine_seq = np.empty(FLAGS.num_epochs_finetune)
 
     def run_epoch_pretrain(self, sess):
         # PRETRAINING TRAIN LOOP
@@ -58,6 +60,7 @@ class DeepSleepNet:
         # FINETUNING TRAIN LOOP
         for epoch in range(FLAGS.num_epochs_finetune):
             self.input.initialize_train(sequential=True)
+            cost_seq = 0.0
             cost = 0.0
             n_batches = 0
 
@@ -68,26 +71,31 @@ class DeepSleepNet:
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
-                        _, c, _ = self.seq_learn.train(sess, batch)
+                        _, _, c_seq, c, _ = self.seq_learn.train(sess, batch)
+                        cost_seq += c_seq
                         cost += c
                         n_batches += 1
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch
 
             if epoch % 3 == 0:
-                print("Epoch:", (epoch + 1), "cost =", "{:.3f}".format(cost / n_batches))
+                print("Epoch:",
+                      (epoch + 1),
+                      "Representation cost = {:.3f}  Sequence cost = {:.3f}".format(
+                        cost / n_batches, cost_seq / n_batches))
                 self.seq_learn.checkpoint(sess)
 
             self.loss_tr_fine[epoch] = cost / n_batches
+            self.loss_tr_fine_seq[epoch] = cost_seq / n_batches
 
     def train(self):
         with tf.Session() as sess:
             """
             Train Representation Learner (Pretraining)
             """
+            sess.run(self.init_op)
             # initialize or restore
             self.seq_learn.restore(sess)
-
             print("Pretraining for {} Epochs.".format(FLAGS.num_epochs_pretrain))
             self.run_epoch_pretrain(sess)
             print("Evaluating Representation Learner...", end=" ")
@@ -177,10 +185,18 @@ class DeepSleepNet:
         except tf.errors.OutOfRangeError:
             pass  # reached end of epoch
 
-        labels = [l for arr in Y for l in arr]
-        predictions = [l for arr in Y_pred for l in arr]
+        labels = np.array(Y).flatten()
+        predictions = np.array(Y_pred).flatten()
         print("\n\nConfusion Matrix:")
         print(confusion_matrix(labels, predictions))
+
+        # Print recall, precision, F1, and support
+        stages = ["N1", "N2", "N3", "REM", "Wake"]
+        p, r, f, s = precision_recall_fscore_support(labels, predictions)
+        for i, stage in enumerate(stages):
+            print(stage, end=" ")
+
+            print("Precision = {:1.3f}, Recall = {:1.3f}, F1 = {:1.3f}, Support = {}".format(p[i], r[i], f[i], s[i]))
 
     def plot_loss(self):
         fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
@@ -189,6 +205,8 @@ class DeepSleepNet:
         ax1.set_ylabel('Loss (Cross Entropy)')
         ax1.set_title('Representation Learning')
         ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_tr_fine)
+        ax2.plot(range(1, FLAGS.num_epochs_finetune + 1), self.loss_tr_fine_seq)
+        ax2.legend(['Representation', 'Sequence'])
         ax2.set_xlabel('Epoch')
         ax2.set_ylabel('Loss (Cross Entropy)')
         ax2.set_title('Sequence Residual Learning')

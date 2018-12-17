@@ -17,7 +17,6 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.seq_learning_rate = FLAGS.learn_rate_pre  # uses higher learning rate for the sequence learner
         self.lstm_size = 512
         # self.num_lstm_layer = 2  unused
 
@@ -26,10 +25,10 @@ class SequenceResidualLearner(RepresentationLearner):
         Input Layer
         """
         self.rep_learn = self.output_layer  # output of representation learner
+        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
-            self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
             self.seq_batch_size = FLAGS.sequence_batch_size
 
             """
@@ -105,12 +104,14 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             # full model (rep learner + seqs rep leaner)
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
-            self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
-                                                        name="seq_opt")
+            self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_pre, beta1=0.9, beta2=0.999,
+                                                        name="adam_seq")
             # TODO: make sure this is only training parts it is meant to train
             self.gvs = self.seq_optimiser.compute_gradients(self.seq_loss, var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
                                                                                        scope='seq_learner'))
-            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in self.gvs]
+            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) if var == "seq_learner/bidirectional_rnn"
+                               else (grad, var) for grad, var in self.gvs]
+
             self.seq_train_op = self.seq_optimiser.apply_gradients(self.capped_gvs)
             #self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
             #                                                name="seq_train",
@@ -171,12 +172,12 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def train(self, sess, data):
         self.mode = "TRAIN"
-        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the featurizer
+        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the feature learner
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_train_op, self.seq_loss, self.update_op], feed_dict=feed_dict)
+        return sess.run([self.seq_train_op, self.train_op_fine, self.seq_loss, self.loss, self.update_op], feed_dict=feed_dict)
 
     def evaluate_rep_learner(self, sess, data):
         return super(SequenceResidualLearner, self).evaluate(sess, data)
