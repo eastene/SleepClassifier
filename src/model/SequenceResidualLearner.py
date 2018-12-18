@@ -161,6 +161,7 @@ class SequenceResidualLearner(RepresentationLearner):
         return tf.tuple(update_ops)
 
     def pretrain(self, sess, data):
+        self.phase = "PRE"
         return super(SequenceResidualLearner, self).train(sess, data)
 
     def reset_lstm_state(self, sess):
@@ -172,12 +173,13 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def train(self, sess, data):
         self.mode = "TRAIN"
+        self.phase = "FINE"
         self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the feature learner
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_train_op, self.train_op_fine, self.seq_loss, self.loss, self.update_op], feed_dict=feed_dict)
+        return sess.run([self.seq_train_op, self.train_op, self.seq_loss, self.loss, self.update_op], feed_dict=feed_dict)
 
     def evaluate_rep_learner(self, sess, data):
         return super(SequenceResidualLearner, self).evaluate(sess, data)
@@ -195,6 +197,9 @@ class SequenceResidualLearner(RepresentationLearner):
         super(SequenceResidualLearner, self).checkpoint(sess)
         save_path = self.seq_saver.save(sess, self.seq_learn_dir)
         print("Sequential Learner saved to: {}".format(save_path))
+
+    def predict_rep_learner(self, sess, data):
+        return super(SequenceResidualLearner, self).predict(sess, data)
 
     def predict(self, sess, data):
         self.mode = "PREDICT"

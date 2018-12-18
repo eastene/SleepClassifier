@@ -15,6 +15,7 @@ class RepresentationLearner:
 
         # Hyperparameters
         self.mode = "TRAIN"  # default value, mutable, only used for dropout layers
+        self.phase = "PRE"
         self.learning_rate = 0.0
 
         # Begin Define Model
@@ -25,7 +26,7 @@ class RepresentationLearner:
         self.y = tf.placeholder(dtype=tf.int32)
         self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, len(FLAGS.input_chs)])
         # first channel is main input channel
-        self.main_input = tf.slice(self.input_layer, [0, 0, 0], [-1, -1, 0])
+        self.main_input = tf.slice(self.input_layer, [0, 0, 0], [-1, -1, 1])
         # second - Nth channels are separated signals
         self.mixed_input = tf.slice(self.input_layer, [0, 0, 1], [-1, -1, -1])
 
@@ -182,7 +183,8 @@ class RepresentationLearner:
         self.pool_1_large_mltch = tf.layers.max_pooling1d(inputs=self.conv_1_large_mltch, pool_size=4, strides=4)
 
         # Dropout
-        self.dropout_large_mltch = tf.layers.dropout(inputs=self.pool_1_large_mltch, rate=0.5, training=self.mode == "TRAIN")
+        self.dropout_large_mltch = tf.layers.dropout(inputs=self.pool_1_large_mltch, rate=0.5,
+                                                     training=self.mode == "TRAIN")
 
         # Conv Layer 2
         self.conv_2_large_mltch = tf.layers.conv1d(
@@ -192,7 +194,7 @@ class RepresentationLearner:
             strides=1,
             activation=tf.nn.relu,
             padding='SAME',
-            name="conv2_large",
+            name="conv2_large_mltch",
             reuse=tf.AUTO_REUSE
         )
 
@@ -204,7 +206,7 @@ class RepresentationLearner:
             strides=1,
             activation=tf.nn.relu,
             padding='SAME',
-            name="conv3_large",
+            name="conv3_large_mltch",
             reuse=tf.AUTO_REUSE
         )
 
@@ -216,13 +218,12 @@ class RepresentationLearner:
             strides=1,
             activation=tf.nn.relu,
             padding='SAME',
-            name="conv4_large",
+            name="conv4_large_mltch",
             reuse=tf.AUTO_REUSE
         )
 
         # Max Pool Layer 2
         self.pool_2_large_mltch = tf.layers.max_pooling1d(inputs=self.conv_4_large_mltch, pool_size=2, strides=2)
-
 
         """
         CNN Branch Evaluation
@@ -258,12 +259,14 @@ class RepresentationLearner:
         Train
         """
         self.loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.logits)
-        self.optimiser = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_pre, beta1=0.9, beta2=0.999)
+        self.optimiser = tf.train.AdamOptimizer(
+            learning_rate=FLAGS.learn_rate_pre if self.phase == "PRE" else FLAGS.learn_rate_fine,
+            beta1 = 0.9, beta2 = 0.999)
         self.train_op = self.optimiser.minimize(self.loss, global_step=tf.train.get_global_step())
 
-        self.optimiser_fine = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_fine, beta1=0.9, beta2=0.999,
-                                                     name='adam_fine')
-        self.train_op_fine = self.optimiser_fine.minimize(self.loss, global_step=tf.train.get_global_step())
+        # self.optimiser_fine = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_fine, beta1=0.9, beta2=0.999,
+        #                                             name='adam_fine')
+        # self.train_op_fine = self.optimiser_fine.minimize(self.loss, global_step=tf.train.get_global_step())
         """
         Eval
         """
@@ -282,6 +285,7 @@ class RepresentationLearner:
 
     def train(self, sess, data):
         self.mode = "TRAIN"
+        self.phase = "PRE"
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
@@ -296,8 +300,12 @@ class RepresentationLearner:
         }
         return sess.run([self.eval_op], feed_dict=feed_dict)
 
-    def predict(self, sess, feed_dict):
+    def predict(self, sess, data):
         self.mode = "PREDICT"
+        feed_dict = {
+            self.x: data[0],
+            self.y: data[1]
+        }
         return sess.run([self.pred_classes], feed_dict=feed_dict)
 
     def checkpoint(self, sess):
@@ -320,4 +328,4 @@ class RepresentationLearner:
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.large_eval, self.small_eval], feed_dict=feed_dict)
+        return sess.run([self.large_eval, self.small_eval, self.mltch_eval], feed_dict=feed_dict)

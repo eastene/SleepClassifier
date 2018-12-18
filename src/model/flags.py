@@ -64,6 +64,8 @@ tf.flags.DEFINE_string("seq_dir",
                            os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
                                         "data/seqs/")),
                        "Path to directory containing sequence data as compressed numpy files")
+tf.flags.DEFINE_string("test_dir", "",
+                       "Path to separate test sequences (in npz format), [optional]")
 tf.flags.DEFINE_string("tfrecord_dir",
                        os.path.abspath(
                            os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
