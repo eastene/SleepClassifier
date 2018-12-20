@@ -2,9 +2,7 @@ import os
 import numpy as np
 import tensorflow as tf
 
-from imblearn.over_sampling import RandomOverSampler
 from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE, META_INFO_FNAME
-
 
 class DataPrepper:
 
@@ -19,6 +17,7 @@ class DataPrepper:
         }
 
     def load_meta_info(self):
+        # checks that existing metainfo matches flags passed to program
         temp_meta = np.load(os.path.join(FLAGS.meta_dir, META_INFO_FNAME))
         temp_meta = temp_meta['a'][()]
 
@@ -34,6 +33,7 @@ class DataPrepper:
         self.meta = temp_meta
 
     def csv2npz(self, files):
+        # convert csv files to npz for more efficient access
         self.meta['nfiles'] += len(files)
         rows = self.meta['rows']
         for f in files:
@@ -49,36 +49,67 @@ class DataPrepper:
         np.savez_compressed(os.path.join(FLAGS.meta_dir, os.path.splitext(META_INFO_FNAME)[0]), a=self.meta)
 
     def csv2npz_mltch(self, files):
+        # convert csv files to npz for more efficient access and combine
+        # multiple signals (each in separate csv) into a single 3D array (example, signal, channel)
         self.meta['nfiles'] += len(files) // len(FLAGS.input_chs)
         rows = self.meta['rows']
 
+        # each file should begin with a unique identifier to match all different signals together
+        # sort them to match them up
         files.sort()
         files_by_channel = []
         for ch in FLAGS.input_chs:
+            # create a separate list for each channel
             files_by_channel.append([f for f in files if ch in os.path.splitext(os.path.basename(f))[0]])
 
-        for chs in zip(*files_by_channel):
+        tot_files = len(files_by_channel[0])
+        # extract signal from each file and add to 3D array
+        for i, chs in enumerate(zip(*files_by_channel)):
             X = []
             y = None
             prefix = '_'.join(os.path.splitext(os.path.basename(chs[0]))[0].split("_")[:-1])
-            for ch in chs:
+            for j, ch in enumerate(chs):
+                print("\rProcessing file {}/{} channel {}/{}".format(i+1, tot_files, j+1, len(chs)), end="")
                 data = np.genfromtxt(ch, dtype=np.float32, delimiter=',', filling_values=[0])
-                x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-                y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
-                if FLAGS.resample_rate > 0:
-                    x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+
+                x = None
+                y = None
+                # only if x.shape[1] == EFFECTIVE_SAMPLE_RATE will x be used without reshaping
+                if data.shape[1] == EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
+                    x = data[:, : EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch]
+                    y = data[:, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
+
+                # if the sample rate is less than the effective rate, this channel cannot be used
+                elif data.shape[1] < EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
+                    print("Error: Signal has sampling rate below the necessary rate, cannot continue.")
+                    print("Offending file {}".format(ch))
+                    exit(1)
+
+                # get x and reshape if necessary
+                else:
+                    x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+                    y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
+                    # only resample if specified and sample rate is larger than the new effective rate
+                    if FLAGS.resample_rate > 0 and x.shape[1] > EFFECTIVE_SAMPLE_RATE:
+                        x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+
                 X.append(x)
                 y = y
-
+            # stack all channels along the 3rd dimension
             X_arr = np.dstack(X)
             np.savez_compressed(os.path.join(FLAGS.seq_dir, "{}_{}_ch".format(prefix, len(FLAGS.input_chs))), x=X_arr, y=y,
                                 fs=EFFECTIVE_SAMPLE_RATE)
+            # count rows in dataset for later use in divying up train/test
             rows += X_arr.shape[0]
+
+        print("") # print newline
         self.meta['rows'] = rows
         self.meta['chs'] = FLAGS.input_chs
         np.savez_compressed(os.path.join(FLAGS.meta_dir, os.path.splitext(META_INFO_FNAME)[0]), a=self.meta)
 
     def csv2tfrecord(self, files):
+        # convert csv directly to tfrecord
+
         # load all data
         X = []
         Y = []
@@ -100,9 +131,9 @@ class DataPrepper:
         X_s[X_s == -np.inf] = 0
         if FLAGS.oversample:
             print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
-            ros = RandomOverSampler()
-            X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
-            print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
+            #ros = RandomOverSampler()
+            #X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
+            #print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
         else:
             X_tmp, Y_tmp = X_s, Y_s
 
@@ -128,6 +159,8 @@ class DataPrepper:
         print("Done.")
 
     def npz2tfrecord(self, files):
+        # convert npz file to tfrecord (allows for npz files with multiple channels)
+
         # load all data
         X = []
         Y = []
@@ -141,18 +174,17 @@ class DataPrepper:
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
         if FLAGS.oversample:
-            # TODO find way to pipeling ROS without reading in entire dataset first
+            # TODO find way to pipeling oversampling without reading in entire dataset first
             counts = np.bincount(Y_s)
             X_os = []
             Y_os = []
+            # random oversampling (make all classes equal to majority size)
             max_count = max(counts)
             for i, count in enumerate(counts):
                 inds = np.random.choice(count, size=max_count, replace=True)
                 Y_os.append(Y_s[Y_s == i][inds])
                 X_os.append(X_s[Y_s == i][inds])
             x_out, y_out = np.vstack(X_os), np.hstack(Y_os)
-            #np.random.shuffle(x_out)
-            #np.random.shuffle(y_out)
         else:
             x_out, y_out = X_s, Y_s
 

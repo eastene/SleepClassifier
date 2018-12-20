@@ -91,7 +91,6 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
                                                     name="shorcut_connect")
-            # self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
             self.seq_output_layer = tf.add(
                 tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)),
                 self.shortcut_connect)
@@ -102,21 +101,19 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Train
             """
-            # full model (rep learner + seqs rep leaner)
+            # full model (rep learner + seqs leaner)
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
             self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_pre, beta1=0.9, beta2=0.999,
                                                         name="adam_seq")
             # TODO: make sure this is only training parts it is meant to train
-            self.gvs = self.seq_optimiser.compute_gradients(self.seq_loss, var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+            self.gvs = self.seq_optimiser.compute_gradients(self.seq_loss,
+                                                            var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
                                                                                        scope='seq_learner'))
+
+            # apply gradient clipping to LSTM
             self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) if var == "seq_learner/bidirectional_rnn"
                                else (grad, var) for grad, var in self.gvs]
-
             self.seq_train_op = self.seq_optimiser.apply_gradients(self.capped_gvs)
-            #self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
-            #                                                name="seq_train",
-            #                                                var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
-            #                                                                           scope='seq_learner'))
 
             """
             Eval

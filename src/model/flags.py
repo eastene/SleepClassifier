@@ -2,8 +2,6 @@ import tensorflow as tf
 
 import os.path
 
-# from os import path
-
 tf.logging.set_verbosity(tf.logging.INFO)
 
 """

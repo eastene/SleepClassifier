@@ -117,6 +117,7 @@ class InputPipeline:
                 self.prepper.npz2tfrecord(missing_files)
         # reglob to capture any updates that may have been made
         self.pretrain_files = glob.glob(path.join(self.tfrecord_dir, self.tf_pattern))
+
         """
         Step 5: Fill in pipeline meta-info
         """
