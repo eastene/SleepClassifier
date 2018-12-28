@@ -1,0 +1,75 @@
+LIBS EEG (files > 125 min, 1 file for test) [200, 150 epochs]
+
+- combined = 62.3%
+
+- large = 27.3%
+
+- small = 17.1%
+
+- overall = 40.7
+
+- F1s = [0.374, 0.354, 0.164, 0.071, 0.331], [0, 0.316, 0.178, 0.087, 0.408]  (CNN only, full model, N1, N2, N3, REM, W)
+
+LIBS EOG (files > 125 min)
+
+- combined = 38.1%
+
+- large = 20.9%
+
+- small = 15.2%
+
+LIBS Mixed (files > 125 min, 1 file for test) [200, 150 epochs]
+
+- combined = 44.7%
+
+- large = 19.7%
+
+- small = 18.5%
+
+- overall = 32.5
+
+- F1s = [0.803, 0.341, 0.082, 0.122, 0.554], [0.245, 0.470, 0.01, 0.186, 0.087]  (CNN only, full model, N1, N2, N3, REM, W)
+
+LIBS Multi-Channel (EEG + EOG, files > 125min) [200, 150 epochs]
+
+- combined = 52.8%
+
+- large = 13.7%
+
+- small = 14.8%
+
+- overall = 39.6%
+
+LIBS Mixed + Multi-Channel (EEG + EOG, files > 125min, 1 file for test) [200, 150 epochs]
+
+- combined = 63.7%
+
+- large = 20.1%
+
+- small = 18.7%
+
+- overall = 48.2%
+
+- F1s [0.386, 0.581, 0.562, 0.446, 0.406], [0.391, 0.525, 0.116, 0.286, 0.477]  (CNN only, full model, N1, N2, N3, REM, W)
+
+LIBS Mixed + Multi-Channel (EEG + EOG on separate CNN, files > 125min)
+
+- combined = 80.0%
+
+- large = 23.3%
+
+- small = 43.4%
+
+- multi-large = 5.6%
+
+- overall =
+
+- F1s = [0.628, 0.663, 0.763, 0.75, 0.528], [0.681, 0.667, 0.487, 0.583, 0.618] (CNN only, full model, N1, N2, N3, REM, W)
+
+Physionet EEG
+
+- combined = 89.2%
+
+- large = 12.9%
+
+- small = 30.4%

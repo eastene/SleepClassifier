@@ -17,7 +17,6 @@ class SequenceResidualLearner(RepresentationLearner):
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
 
         # Hyperparameters
-        self.seq_learning_rate = FLAGS.learn_rate_pre  # uses higher learning rate for the sequence learner
         self.lstm_size = 512
         # self.num_lstm_layer = 2  unused
 
@@ -26,10 +25,10 @@ class SequenceResidualLearner(RepresentationLearner):
         Input Layer
         """
         self.rep_learn = self.output_layer  # output of representation learner
+        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 3712)) # TODO: change back to 2816?
 
         # scoped for training with different training rate than representation learner
-        with tf.name_scope("seq_learner") as seq_learner:
-            self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))
+        with tf.variable_scope("seq_learner") as seq_learner:
             self.seq_batch_size = FLAGS.sequence_batch_size
 
             """
@@ -61,8 +60,8 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.states = self.get_state_variables([self.fw_cell, self.bw_cell])
 
-            #self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
-            #self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            # self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
+            # self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
 
             # states are dropped after training on each sample so that the states from
             # one sample does not influence those of another
@@ -92,7 +91,6 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
                                                     name="shorcut_connect")
-            # self.lstm_dropout = tf.layers.dropout(inputs=self.bd_lstm, rate=0.5)
             self.seq_output_layer = tf.add(
                 tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)),
                 self.shortcut_connect)
@@ -103,30 +101,35 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Train
             """
-            # full model (rep learner + seqs rep leaner)
+            # full model (rep learner + seqs leaner)
             self.seq_loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.seq_logits)
-            self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=self.seq_learning_rate, beta1=0.9, beta2=0.999,
-                                                        name="seq_opt")
-            # TODO: make sure this is only training
-            self.seq_train_op = self.seq_optimiser.minimize(self.seq_loss, global_step=tf.train.get_global_step(),
-                                                        name="seq_train")#,
-                                                        #var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
-                                                         #                          scope='seq_learner'))
-        """
-        Eval
-        """
-        self.seq_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(self.seq_logits, axis=1))
-        self.seq_eval_op = tf.reduce_mean(tf.cast(self.seq_correct_classes, tf.float32), name="seq_eval")
+            self.seq_optimiser = tf.train.AdamOptimizer(learning_rate=FLAGS.learn_rate_pre, beta1=0.9, beta2=0.999,
+                                                        name="adam_seq")
+            # TODO: make sure this is only training parts it is meant to train
+            self.gvs = self.seq_optimiser.compute_gradients(self.seq_loss,
+                                                            var_list=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                                       scope='seq_learner'))
 
-        """
-        Predict
-        """
-        self.seq_pred_classes = tf.argmax(self.seq_logits, axis=1)
+            # apply gradient clipping to LSTM
+            self.capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) if var == "seq_learner/bidirectional_rnn"
+                               else (grad, var) for grad, var in self.gvs]
+            self.seq_train_op = self.seq_optimiser.apply_gradients(self.capped_gvs)
 
-        """
-        Save & Restore
-        """
-        self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
+            """
+            Eval
+            """
+            self.seq_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(self.seq_logits, axis=1))
+            self.seq_eval_op = tf.reduce_mean(tf.cast(self.seq_correct_classes, tf.float32), name="seq_eval")
+
+            """
+            Predict
+            """
+            self.seq_pred_classes = tf.argmax(self.seq_logits, axis=1)
+
+            """
+            Save & Restore
+            """
+            self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
 
     def get_state_variables(self, cells):
         # For each layer, get the initial state and make a variable out of it
@@ -155,6 +158,7 @@ class SequenceResidualLearner(RepresentationLearner):
         return tf.tuple(update_ops)
 
     def pretrain(self, sess, data):
+        self.phase = "PRE"
         return super(SequenceResidualLearner, self).train(sess, data)
 
     def reset_lstm_state(self, sess):
@@ -166,12 +170,13 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def train(self, sess, data):
         self.mode = "TRAIN"
-        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the featurizer
+        self.phase = "FINE"
+        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the feature learner
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_train_op, self.seq_loss, self.update_op], feed_dict=feed_dict)
+        return sess.run([self.seq_train_op, self.train_op, self.seq_loss, self.loss, self.update_op], feed_dict=feed_dict)
 
     def evaluate_rep_learner(self, sess, data):
         return super(SequenceResidualLearner, self).evaluate(sess, data)
@@ -189,6 +194,9 @@ class SequenceResidualLearner(RepresentationLearner):
         super(SequenceResidualLearner, self).checkpoint(sess)
         save_path = self.seq_saver.save(sess, self.seq_learn_dir)
         print("Sequential Learner saved to: {}".format(save_path))
+
+    def predict_rep_learner(self, sess, data):
+        return super(SequenceResidualLearner, self).predict(sess, data)
 
     def predict(self, sess, data):
         self.mode = "PREDICT"
