@@ -2,20 +2,20 @@ import tensorflow as tf
 from tensorflow.contrib.layers import l2_regularizer
 from os import path
 
-from src.existing_solution.flags import FLAGS
+from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 
 
 class RepresentationLearner:
 
-    def __init__(self, sampling_rate):
+    def __init__(self):
         # Housekeeping Parameters
         self.gen_dir = FLAGS.checkpoint_dir  # where to save whole model
         self.rep_learn_dir = path.join(FLAGS.checkpoint_dir, "rep_learn", "")  # where to save reusable layers
-        self.sampling_rate = int(sampling_rate)
+        self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
         # Hyperparameters
-        self.mode = "TRAIN"  # default value, mutable
-        self.learning_rate = 0.0001  # default value, mutable
+        self.mode = "TRAIN"  # default value, mutable, only used for dropout layers
+        self.learning_rate = FLAGS.learn_rate_pre
 
         # Begin Define Model
         """
@@ -23,16 +23,16 @@ class RepresentationLearner:
         """
         self.x = tf.placeholder(dtype=tf.float32)
         self.y = tf.placeholder(dtype=tf.int32)
-        self.input_layer = tf.reshape(self.x, [-1, 3000, 1])
+        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, 1])
 
-        #with tf.variable_scope("REP_SCOPE") as scope:
+        # with tf.variable_scope("REP_SCOPE") as scope:
 
         # Shared Conv Layers
         self.batch_normalizer = tf.layers.batch_normalization(self.input_layer, epsilon=1e-5)
         self.l2_regulizer = l2_regularizer(0.001)
 
         """
-        Coarse-Grain Convolutional Layer
+        Coarse-Grain Convolutional Layers
         """
         # Conv Layer 1
         self.conv_1_large = tf.layers.conv1d(
@@ -93,7 +93,7 @@ class RepresentationLearner:
         self.pool_2_large = tf.layers.max_pooling1d(inputs=self.conv_4_large, pool_size=2, strides=2)
 
         """
-        Fine-Grain Convolutional Layer
+        Fine-Grain Convolutional Layers
         """
         # Conv Layer 1
         self.conv_1_small = tf.layers.conv1d(
@@ -188,8 +188,8 @@ class RepresentationLearner:
         """
         self.saver = tf.train.Saver()  # saves entire model
 
-    def pretrain(self, sess, data):
-        self.learning_rate = 0.0001
+    def train(self, sess, data):
+        self.learning_rate = FLAGS.learn_rate_pre
         self.mode = "TRAIN"
         feed_dict = {
             self.x: data[0],
@@ -197,16 +197,7 @@ class RepresentationLearner:
         }
         return sess.run([self.train_op, self.loss], feed_dict=feed_dict)
 
-    def finetune(self, sess, data):
-        self.learning_rate = 0.000001
-        self.mode = "TRAIN"
-        feed_dict = {
-            self.x: data[0],
-            self.y: data[1]
-        }
-        return sess.run([self.train_op, self.output_layer, self.y], feed_dict=feed_dict)
-
-    def eval(self, sess, data):
+    def evaluate(self, sess, data):
         self.mode = "EVAL"
         feed_dict = {
             self.x: data[0],
@@ -224,12 +215,10 @@ class RepresentationLearner:
         print("Representation Learner saved to: {}".format(save_path))
 
     def restore(self, sess):
+        print("Restoring Representation Learner...", end=" ")
         if tf.train.checkpoint_exists(self.rep_learn_dir):
             self.saver.restore(sess, self.rep_learn_dir)  # restore only rep learner model
             print("Representation Learner restored.")
         else:
-            raise tf.errors.NotFoundError(
-                node_def=self.saver,
-                op=self.saver.restore,
-                message="No Representation Learner found at: {}".format(self.rep_learn_dir)
-            )
+            print("No Representation Learner found at: {}. Initializing.".format(self.rep_learn_dir))
+            sess.run(tf.global_variables_initializer())
