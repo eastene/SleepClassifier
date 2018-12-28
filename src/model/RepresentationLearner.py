@@ -256,7 +256,9 @@ class RepresentationLearner:
             self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large], axis=1)
 
         self.dropout = tf.layers.dropout(self.cnn_output, rate=0.5, training=self.mode == "TRAIN")
-        self.output_layer = tf.layers.flatten(inputs=self.dropout)
+        self.temp_layer = tf.layers.flatten(inputs=self.dropout)
+
+        self.output_layer = tf.layers.dense(self.temp_layer, units=2816, name='down_sizer')
 
         # Logits Layer, used only in pretraining
         self.logits = tf.layers.dense(inputs=self.output_layer, units=5, reuse=tf.AUTO_REUSE)
