@@ -150,6 +150,7 @@ class DeepSleepNet:
             m_tot_l = 0
             m_tot_s = 0
             m_tot_m = 0
+            m_tot_eeg = 0
             n_batches = 0
             sess.run(self.input.initialize_eval())
 
@@ -158,15 +159,13 @@ class DeepSleepNet:
                 while True:
                     data = sess.run(self.next_elem_eval_pre)
                     m = self.seq_learn.evaluate_rep_learner(sess, data)
-                    if len(FLAGS.input_chs) > 1:
-                        m_l, m_s, m_m = self.seq_learn.eval_branches(sess, data)
-                        m_tot_m += m_m
-                    else:
-                        m_l, m_s = self.seq_learn.eval_branches(sess, data)
+                    m_l, m_s, m_m, m_eeg = self.seq_learn.eval_branches(sess, data)
+                    m_tot_m += m_m
                     n_batches += 1
                     m_tot += m[0]
                     m_tot_l += m_l
                     m_tot_s += m_s
+                    m_tot_eeg += m_eeg
 
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch
@@ -174,8 +173,8 @@ class DeepSleepNet:
             print("Representation Learner Accuracy: {}".format(m_tot / n_batches))
             print("Large-Filter Branch Accuracy: {}".format(m_tot_l / n_batches))
             print("Small-Filter Branch Accuracy: {}".format(m_tot_s / n_batches))
-            if len(FLAGS.input_chs) > 1:
-                print("Mixed-channel Large-Filter Branch Accuracy: {}".format(m_tot_m / n_batches))
+            print("Mixed-channel Large-Filter Branch Accuracy: {}".format(m_tot_m / n_batches))
+            print("EEG/EOG Branch Accuracy: {}".format(m_tot_eeg / n_batches))
 
         else:
             # FINETUNING EVAL LOOP

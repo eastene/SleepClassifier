@@ -75,7 +75,7 @@ class DataPrepper:
                 x = None
                 y = None
                 # only if x.shape[1] == EFFECTIVE_SAMPLE_RATE will x be used without reshaping
-                if data.shape[1] == EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
+                if data.shape[1] == (EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1):
                     x = data[:, : EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch]
                     y = data[:, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
 

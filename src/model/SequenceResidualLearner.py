@@ -25,15 +25,32 @@ class SequenceResidualLearner(RepresentationLearner):
         Input Layer
         """
         self.rep_learn = self.output_layer  # output of representation learner
-        self.input_seqs = tf.reshape(self.rep_learn, (FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816)) # TODO: change back to 2816?
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
-            self.seq_batch_size = FLAGS.sequence_batch_size
+
+            """
+            Shortcut Connect
+            """
+            self.seq_batch_normalizer = tf.layers.batch_normalization(
+                self.rep_learn,
+                epsilon=1e-5,
+                reuse=tf.AUTO_REUSE,
+                name="seq_batch_normalizer"
+            )
+
+            self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
+                                                    name="shorcut_connect")
 
             """
             Bi-Directional LSTM
             """
+            self.feature_slice = tf.slice(self.output_layer, [0, 0], [-1, 2816])
+            self.input_seqs = tf.reshape(self.feature_slice, (
+            FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))  # TODO: change back to 2816?
+
+            self.seq_batch_size = FLAGS.sequence_batch_size
+
             # Bidirectional LSTM Cell
             # for some reason, the 2 layers of the bidirectional lstm will not work
             # without explicitly enumerating each layer
@@ -60,9 +77,6 @@ class SequenceResidualLearner(RepresentationLearner):
 
             self.states = self.get_state_variables([self.fw_cell, self.bw_cell])
 
-            # self.initial_states_fw = self.fw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
-            # self.initial_states_bw = self.bw_cell.zero_state(self.seq_batch_size, dtype=tf.float32)
-
             # states are dropped after training on each sample so that the states from
             # one sample does not influence those of another
             # dynamic RNN chosen to train on GPUs with smaller memories
@@ -82,15 +96,7 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Output Layer
             """
-            self.seq_batch_normalizer = tf.layers.batch_normalization(
-                self.rep_learn,
-                epsilon=1e-5,
-                reuse=tf.AUTO_REUSE,
-                name="seq_batch_normalizer"
-            )
 
-            self.shortcut_connect = tf.layers.dense(inputs=self.seq_batch_normalizer, units=1024, activation=tf.nn.relu,
-                                                    name="shorcut_connect")
             self.seq_output_layer = tf.add(
                 tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)),
                 self.shortcut_connect)
@@ -157,16 +163,16 @@ class SequenceResidualLearner(RepresentationLearner):
         # The tuple's actual value should not be used.
         return tf.tuple(update_ops)
 
-    def pretrain(self, sess, data):
-        self.phase = "PRE"
-        return super(SequenceResidualLearner, self).train(sess, data)
-
     def reset_lstm_state(self, sess):
         zero_states = [
             self.fw_cell.zero_state(self.seq_batch_size, tf.float32),
             self.bw_cell.zero_state(self.seq_batch_size, tf.float32)
         ]
         return sess.run(self.get_state_update_op(self.states, zero_states))
+
+    def pretrain(self, sess, data):
+        self.phase = "PRE"
+        return super(SequenceResidualLearner, self).train(sess, data)
 
     def train(self, sess, data):
         self.mode = "TRAIN"

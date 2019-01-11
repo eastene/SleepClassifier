@@ -7,7 +7,7 @@ import os
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import train_test_split
 
-DATA_DIR = '/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_data/'
+DATA_DIR = '/home/evan/PycharmProjects/SleepClassifier/data/existing_solution/prepared_eeg/'
 FILE_PATTERN = DATA_DIR + '*.npz'
 
 npz_files = glob(FILE_PATTERN)
