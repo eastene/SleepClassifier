@@ -24,6 +24,11 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         Input Layer
         """
+        self.cnn_output_tmp = tf.concat(
+            [self.pool_2_small, self.pool_2_large], axis=1)
+
+        self.dropout_tmp = tf.layers.dropout(self.cnn_output_tmp, rate=0.5, training=self.mode == "TRAIN")
+        self.output_layer_tmp = tf.layers.flatten(inputs=self.dropout_tmp)
         self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
@@ -45,8 +50,8 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Bi-Directional LSTM
             """
-            self.feature_slice = tf.slice(self.output_layer, [0, 0], [-1, 2816])
-            self.input_seqs = tf.reshape(self.feature_slice, (
+
+            self.input_seqs = tf.reshape(self.output_layer_tmp, (
             FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))  # TODO: change back to 2816?
 
             self.seq_batch_size = FLAGS.sequence_batch_size

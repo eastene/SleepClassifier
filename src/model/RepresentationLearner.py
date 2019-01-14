@@ -24,7 +24,7 @@ class RepresentationLearner:
         """
         self.x = tf.placeholder(dtype=tf.float32)
         self.y = tf.placeholder(dtype=tf.int32)
-        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, len(FLAGS.input_chs)])
+        self.input_layer = tf.reshape(self.x, [-1, self.sampling_rate * FLAGS.s_per_epoch, 1])
 
         # Shared Conv Layers
         self.batch_normalizer = tf.layers.batch_normalization(self.input_layer, epsilon=1e-5)
@@ -37,8 +37,8 @@ class RepresentationLearner:
         self.conv_1_large = tf.layers.conv1d(
             inputs=self.batch_normalizer,
             filters=64,
-            kernel_size=self.sampling_rate * 2,
-            strides=self.sampling_rate // 4,
+            kernel_size=self.sampling_rate * 4,
+            strides=self.sampling_rate // 2,
             activation=tf.nn.relu,
             padding='SAME',
             kernel_regularizer=self.l2_regulizer,
@@ -89,7 +89,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 2
-        self.pool_2_large = tf.layers.max_pooling1d(inputs=self.conv_4_large, pool_size=4, strides=4)
+        self.pool_2_large = tf.layers.max_pooling1d(inputs=self.conv_4_large, pool_size=2, strides=2)
 
         """
         Frequency Convolutional Layers
@@ -98,8 +98,8 @@ class RepresentationLearner:
         self.conv_1_small = tf.layers.conv1d(
             inputs=self.batch_normalizer,
             filters=64,
-            kernel_size=self.sampling_rate // 4,
-            strides=self.sampling_rate // 32,
+            kernel_size=self.sampling_rate // 2,
+            strides=self.sampling_rate // 16,
             activation=tf.nn.relu,
             padding='SAME',
             kernel_regularizer=self.l2_regulizer,
@@ -150,7 +150,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 2
-        self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=2, strides=2)
+        self.pool_2_small = tf.layers.max_pooling1d(inputs=self.conv_4_small, pool_size=4, strides=4)
 
         """
         EMG Convolutional Layers
@@ -275,6 +275,24 @@ class RepresentationLearner:
 
         # Max Pool Layer 2
         self.pool_2_eeg = tf.layers.max_pooling1d(inputs=self.conv_4_eeg, pool_size=2, strides=2)
+
+        """
+        Interchannel Features
+        """
+        self.extracted_output = tf.concat([self.pool_2_large_mltch, self.pool_2_eeg], axis=1)
+        # Conv Layer 1
+        self.conv_1_mixed = tf.layers.conv1d(
+            inputs=self.extracted_output,
+            filters=128,
+            kernel_size=6,
+            strides=1,
+            activation=tf.nn.relu,
+            padding='SAME',
+            name="conv1_mixed",
+            reuse=tf.AUTO_REUSE
+        )
+        # Max Pool Layer 1
+        self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_1_mixed, pool_size=4, strides=4)
 
         """
         CNN Branch Evaluation
