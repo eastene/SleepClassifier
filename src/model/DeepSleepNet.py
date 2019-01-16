@@ -15,7 +15,6 @@ class DeepSleepNet:
 
     def __init__(self):
         # hyper-parameters
-        # self.n_folds = 20
         self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
         # model
@@ -91,6 +90,7 @@ class DeepSleepNet:
             self.loss_tr_fine_seq[epoch] = cost_seq / n_batches
 
     def train(self):
+
         with tf.Session() as sess:
             """
             Train Representation Learner (Pretraining)

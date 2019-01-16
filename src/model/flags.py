@@ -41,9 +41,9 @@ tf.flags.DEFINE_float("learn_rate_fine", 0.000001, "learning rate for pretrainin
 *
 """
 tf.flags.DEFINE_integer("sampling_rate", 2000, "sampling rate used to generate signal (hz)")
-tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the input signal")
-tf.flags.DEFINE_list("input_chs", 'eeg', "name of input channels (e.g. [eeg, eog] is 2 channels), input channel "
-                                         "name should appear in file name and be unique to that data type")
+tf.flags.DEFINE_integer("resample_rate", 20, "rate at which to downsample the input signal")
+#tf.flags.DEFINE_list("input_chs", 'eeg', "name of input channels (e.g. [eeg, eog] is 2 channels), input channel "
+#                                         "name should appear in file name and be unique to that data type")
 tf.flags.DEFINE_integer("s_per_epoch", 30, "seconds of signal data considered as a single epoch")
 tf.flags.DEFINE_string("checkpoint_dir", os.path.join(os.path.dirname(os.path.realpath(__file__)), "tmp/"),
                        "directory in which to save model parameters while training")
@@ -90,6 +90,8 @@ tf.flags.DEFINE_bool("cnfsn_mat", False, "print confusion matrix on last evaluat
 tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
 
 FLAGS = tf.flags.FLAGS
+
+FLAGS.input_chs = ['mixed']
 
 EFFECTIVE_SAMPLE_RATE = FLAGS.sampling_rate // max(FLAGS.resample_rate, 1)
 META_INFO_FNAME = 'meta_info.npz'

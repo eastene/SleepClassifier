@@ -166,13 +166,11 @@ class InputPipeline:
 
     def input_fn(self):
         print("Looking for data files matching: {}\nIn: {}".format(self.tf_pattern, self.tfrecord_dir))
-        files = tf.data.Dataset.list_files(file_pattern=path.join(self.tfrecord_dir, self.tf_pattern), shuffle=False)
+        files = tf.data.Dataset.list_files(file_pattern=path.join(self.tfrecord_dir, self.tf_pattern))
 
         # interleave reading of dataset for parallel I/O
-        dataset = files.apply(
-            tf.data.experimental.parallel_interleave(
+        dataset = files.interleave(
                 tf.data.TFRecordDataset, cycle_length=FLAGS.num_parallel_readers
-            )
         )
 
         dataset = dataset.cache()
@@ -181,11 +179,8 @@ class InputPipeline:
         dataset = dataset.shuffle(buffer_size=FLAGS.shuffle_buffer_size)
 
         # parse the data and prepares the batches in parallel (helps most with larger batches)
-        dataset = dataset.apply(
-            tf.data.experimental.map_and_batch(
-                map_func=self.parse_fn, batch_size=FLAGS.batch_size
-            )
-        )
+        dataset = dataset.map(map_func=self.parse_fn)
+        dataset = dataset.batch(batch_size=FLAGS.batch_size)
 
         # prefetch data so that the CPU can prepare the next batch(s) while the GPU trains
         # recommmend setting buffer size to number of training examples per training step

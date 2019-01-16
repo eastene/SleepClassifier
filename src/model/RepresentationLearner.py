@@ -274,7 +274,7 @@ class RepresentationLearner:
         )
 
         # Max Pool Layer 2
-        self.pool_2_eeg = tf.layers.max_pooling1d(inputs=self.conv_4_eeg, pool_size=2, strides=2)
+        self.pool_2_eeg = tf.layers.max_pooling1d(inputs=self.conv_4_eeg, pool_size=4, strides=4)
 
         """
         Interchannel Features
