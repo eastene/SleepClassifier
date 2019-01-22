@@ -24,21 +24,58 @@ class SequenceResidualLearner(RepresentationLearner):
         """
         Input Layer
         """
-        self.cnn_output_tmp = tf.concat(
-            [self.pool_2_small, self.pool_2_large], axis=1)
-
-        self.dropout_tmp = tf.layers.dropout(self.cnn_output_tmp, rate=0.5, training=self.mode == "TRAIN")
-        self.output_layer_tmp = tf.layers.flatten(inputs=self.dropout_tmp)
         self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
+            """
+            Interchannel Features
+            """
+            self.extracted_output = tf.concat([self.pool_2_large_mltch, self.pool_2_eeg], axis=1)
+            # Conv Layer 1
+            self.conv_1_mixed = tf.layers.conv1d(
+                inputs=self.extracted_output,
+                filters=128,
+                kernel_size=8,
+                strides=1,
+                activation=tf.nn.relu,
+                padding='VALID',
+                name="conv1_mixed",
+                reuse=tf.AUTO_REUSE
+            )
+            # Conv Layer 1
+            self.conv_2_mixed = tf.layers.conv1d(
+                inputs=self.conv_1_mixed,
+                filters=128,
+                kernel_size=8,
+                strides=1,
+                activation=tf.nn.relu,
+                padding='VALID',
+                name="conv2_mixed",
+                reuse=tf.AUTO_REUSE
+            )
+            # Conv Layer 1
+            self.conv_3_mixed = tf.layers.conv1d(
+                inputs=self.conv_2_mixed,
+                filters=128,
+                kernel_size=8,
+                strides=1,
+                activation=tf.nn.relu,
+                padding='VALID',
+                name="conv3_mixed",
+                reuse=tf.AUTO_REUSE
+            )
+            # Max Pool Layer 1
+            self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_3_mixed, pool_size=4, strides=4)
 
+            self.sig_feats = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_mixed], axis=1)
+            self.feats_dropout = tf.layers.dropout(self.sig_feats, rate=0.5, training=self.mode == "TRAIN")
+            self.feats_in = tf.layers.flatten(inputs=self.feats_dropout)
             """
             Shortcut Connect
             """
             self.seq_batch_normalizer = tf.layers.batch_normalization(
-                self.rep_learn,
+                self.feats_in,
                 epsilon=1e-5,
                 reuse=tf.AUTO_REUSE,
                 name="seq_batch_normalizer"
@@ -51,8 +88,8 @@ class SequenceResidualLearner(RepresentationLearner):
             Bi-Directional LSTM
             """
 
-            self.input_seqs = tf.reshape(self.output_layer_tmp, (
-            FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))  # TODO: change back to 2816?
+            self.input_seqs = tf.reshape(tf.layers.flatten(self.pool_mixed), (
+            FLAGS.sequence_batch_size, FLAGS.sequence_length, 5248))  # TODO: change back to 2816?
 
             self.seq_batch_size = FLAGS.sequence_batch_size
 
@@ -96,15 +133,12 @@ class SequenceResidualLearner(RepresentationLearner):
             self.update_op = self.get_state_update_op(self.states, self.new_states)
 
             # concatenate forward and backward lstm outputs
-            self.bd_lstm_out = tf.concat(self.bd_lstm, 1)
+            self.bd_lstm_out =  tf.reshape(tf.concat(self.bd_lstm, 1), shape=(FLAGS.sequence_length * self.seq_batch_size, 1024))
 
             """
             Output Layer
             """
-
-            self.seq_output_layer = tf.add(
-                tf.reshape(self.bd_lstm_out, shape=(FLAGS.sequence_length * self.seq_batch_size, 1024)),
-                self.shortcut_connect)
+            self.seq_output_layer = tf.add(self.bd_lstm_out, self.shortcut_connect)
             self.seq_dropout = tf.layers.dropout(self.seq_output_layer, rate=0.5)
             self.seq_logits = tf.layers.dense(inputs=self.seq_dropout, units=5, name="seq_logits")
             # End Define Model

@@ -291,8 +291,19 @@ class RepresentationLearner:
             name="conv1_mixed",
             reuse=tf.AUTO_REUSE
         )
+        # Conv Layer 1
+        self.conv_2_mixed = tf.layers.conv1d(
+            inputs=self.extracted_output,
+            filters=128,
+            kernel_size=6,
+            strides=1,
+            activation=tf.nn.relu,
+            padding='SAME',
+            name="conv2_mixed",
+            reuse=tf.AUTO_REUSE
+        )
         # Max Pool Layer 1
-        self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_1_mixed, pool_size=4, strides=4)
+        self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_2_mixed, pool_size=4, strides=4)
 
         """
         CNN Branch Evaluation
