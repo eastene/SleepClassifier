@@ -97,18 +97,7 @@ class InputPipeline:
         self.seq_files = glob.glob(path.join(self.seq_dir, self.seq_pattern))
 
         """
-        Step 4: Fill in pipeline meta-info
-        """
-
-        if not self.has_meta_info:
-            for sf in self.seq_files:
-                with np.load(sf) as f:
-                    self.data_len += f['x'].shape[0]  # count total lines in all dataset
-        else:
-            self.data_len = self.prepper.get_rows()
-
-        """
-        Step 5: Define pipeline functionality
+        Step 6: Define pipeline functionality
         """
         test_split = max(1, int(len(self.seq_files) * FLAGS.test_split)) if len(self.seq_files) > 1 else 0
         if FLAGS.shuffle_input:
@@ -171,7 +160,7 @@ class InputPipeline:
             rand.shuffle(self.train_seqs)
             self.train_seq_idx = 0
         else:
-            rand.shuffle(self.train_eps)
+            np.random.shuffle(self.train_eps)
             self.train_epoch = 0
 
     def initialize_eval(self, sequential=False):
@@ -179,7 +168,7 @@ class InputPipeline:
             rand.shuffle(self.eval_seqs)
             self.eval_seq_idx = 0
         else:
-            rand.shuffle(self.eval_eps)
+            np.random.shuffle(self.eval_eps)
             self.eval_epoch = 0
 
     def next_train_elem(self, sequential=False):
@@ -195,14 +184,13 @@ class InputPipeline:
             self.train_seq_idx += 1
             return self.get_next_seq(file)
 
-        if self.train_epoch >= len(self.train_eps):
+        if self.train_epoch >= self.train_eps.shape[0]:
             raise IndexError()
-        batch_size = FLAGS.batch_size if self.train_epoch + FLAGS.batch_size < len(self.train_eps) else len(
-            self.train_eps) - self.train_epoch - 1
-        batch = list(zip(*self.train_eps[self.train_epoch:batch_size]))
+
+        batch_size = min(FLAGS.batch_size, self.train_eps.shape[0] - self.train_epoch)
+        data = self.train_eps[self.train_epoch:self.train_epoch + batch_size]
         self.train_epoch += batch_size
-        print(np.vstack(batch[0]).shape)
-        return np.vstack(batch[0]), np.vstack(batch[1])
+        return data[:, :-1], data[:, -1]
 
     def next_eval_elem(self, sequential=False):
         """
@@ -217,10 +205,10 @@ class InputPipeline:
             self.eval_seq_idx += 1
             return self.get_next_seq(file)
 
-        if self.eval_epoch >= len(self.eval_eps):
+        if self.eval_epoch >= self.eval_eps.shape[0]:
             raise IndexError()
-        batch_size = FLAGS.batch_size if self.eval_epoch + FLAGS.batch_size < len(self.eval_eps) else len(
-            self.eval_eps) - self.eval_epoch - 1
-        batch = self.eval_eps[self.eval_epoch:batch_size]
+
+        batch_size = min(FLAGS.batch_size, self.eval_eps.shape[0] - self.eval_epoch)
+        data = self.eval_eps[self.eval_epoch:self.eval_epoch + batch_size]
         self.eval_epoch += batch_size
-        return list(zip(*batch))
+        return data[:, :-1], data[:, -1]

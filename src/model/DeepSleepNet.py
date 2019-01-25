@@ -105,16 +105,6 @@ class DeepSleepNet:
             if FLAGS.cnfsn_mat:
                 print("Pretraining Performance:")
                 self.print_confusion_matrix(sess, rep_only=True)
-            if FLAGS.test_dir != "":
-                print("Pretraining Test Performance:")
-                files = glob(path.join(FLAGS.test_dir, '*.npz'))
-                X = []
-                Y = []
-                for f in files:
-                    data = np.load(f)
-                    X.append(data['x'])
-                    Y.append(data['y'])
-                self.test(sess, np.vstack(X), np.hstack(Y), rep_only=True)
 
             """
             Train Sequence Learner (Finetuning)
@@ -127,16 +117,7 @@ class DeepSleepNet:
             if FLAGS.cnfsn_mat:
                 print("Model Performance:")
                 self.print_confusion_matrix(sess)
-            if FLAGS.test_dir != "":
-                print("Model Test Performance:")
-                files = glob(path.join(FLAGS.test_dir, '*.npz'))
-                X = []
-                Y = []
-                for f in files:
-                    data = np.load(f)
-                    X.append(data['x'])
-                    Y.append(data['y'])
-                self.test(sess, np.vstack(X), np.hstack(Y))
+
             if FLAGS.plot_loss:
                 self.plot_loss()
 
@@ -191,7 +172,7 @@ class DeepSleepNet:
                 while True:
                     data = self.input.next_eval_elem()
                     y_pred = self.seq_learn.predict_rep_learner(sess, data)
-                    Y.append(data[1].flatten())
+                    Y.append(data[1].astype(np.int64))
                     Y_pred.append(np.vstack(y_pred).flatten())
             except IndexError:
                 pass  # reached end of epoch
@@ -210,8 +191,10 @@ class DeepSleepNet:
             except IndexError:
                 pass  # reached end of epoch
 
-        labels = np.array(Y).flatten()
-        predictions = np.array(Y_pred).flatten()
+        labels = np.hstack(Y)
+        predictions = np.hstack(Y_pred)
+        print(labels)
+        print(predictions)
         self.print_performance(labels, predictions)
 
     @staticmethod

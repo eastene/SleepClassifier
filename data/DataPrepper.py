@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import tensorflow as tf
+from imblearn.over_sampling import RandomOverSampler
 
 from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE, META_INFO_FNAME
 
@@ -30,12 +31,28 @@ class DataPrepper:
         # convert csv files to npz for more efficient access
         self.meta['nfiles'] += len(files)
         rows = self.meta['rows']
-        for f in files:
+        for i, f in enumerate(files):
+            print("Processing channel {}/{}".format(i, len(files)))
             data = np.genfromtxt(f, dtype=np.float32, delimiter=',', filling_values=[0])
-            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
-            if FLAGS.resample_rate > 0:
-                x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
+
+            # only if x.shape[1] == EFFECTIVE_SAMPLE_RATE will x be used without reshaping
+            if data.shape[1] == EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
+                x = data[:, : EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch]
+                y = data[:, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
+
+            # if the sample rate is less than the effective rate, this channel cannot be used
+            elif data.shape[1] < EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
+                print("Error: Signal has sampling rate below the necessary rate, cannot continue.")
+                print("Offending file {}".format(f))
+                exit(1)
+
+            # get x and reshape if necessary
+            else:
+                x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
+                y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch].astype(dtype=np.int64) - 1
+                # only resample if specified and sample rate is larger than the new effective rate
+                if FLAGS.resample_rate > 0 and x.shape[1] > EFFECTIVE_SAMPLE_RATE:
+                    x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
             np.savez_compressed(os.path.join(FLAGS.seq_dir, os.path.splitext(os.path.basename(f))[0]), x=x, y=y,
                                 fs=EFFECTIVE_SAMPLE_RATE)
             rows += x.shape[0]
@@ -63,35 +80,25 @@ class DataPrepper:
             print("Training Files:")
         else:
             print("Eval Files:")
+
         for f in npz_files:
             print(f)
             data = np.load(f)
-            x = data['x']
-            y = data['y']
-            if FLAGS.resample_rate > 0:
-                x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
-            X.append(x)
-            Y.append(y.astype(dtype=np.int64))
+            X.append(data['x'])
+            Y.append(data['y'].astype(dtype=np.int64))
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
         X_s[X_s == np.inf] = 0
         X_s[X_s == -np.inf] = 0
 
         # only oversample training set (no need to oversample eval)
-        if FLAGS.oversample and train:
+        if not FLAGS.no_oversample and train:
             counts = np.bincount(Y_s)
             print("Pre Oversampling Label Counts {}".format(counts))
-            X_os = []
-            Y_os = []
-            # random oversampling (make all classes equal to majority size)
-            max_count = max(counts)
-            for i, count in enumerate(counts):
-                inds = np.random.choice(count, size=max_count, replace=True)
-                Y_os.append(Y_s[Y_s == i][inds])
-                X_os.append(X_s[Y_s == i][inds])
-            x_out, y_out = np.vstack(X_os), np.hstack(Y_os)
+            ros = RandomOverSampler()
+            x_out, y_out = ros.fit_sample(X_s, Y_s)
             print("Post Oversampling Label Counts {}".format(np.bincount(y_out)))
         else:
             x_out, y_out = X_s, Y_s
 
-        return list(zip(x_out, y_out))
+        return np.concatenate((x_out, np.reshape(y_out, newshape=(y_out.shape[0], 1))), axis=1)

@@ -62,7 +62,7 @@ tf.flags.DEFINE_string("seq_dir",
                        "Path to directory containing sequence data as compressed numpy files")
 tf.flags.DEFINE_string("meta_dir", os.path.dirname(os.path.realpath(__file__)),
                        "Path to directory containing data meta info")
-tf.flags.DEFINE_bool("oversample", True, "whether to oversample input to the representation learner, "
+tf.flags.DEFINE_bool("no_oversample", False, "whether to oversample input to the representation learner, "
                                          "requires rebuilding the tfrecords if altered")
 tf.flags.DEFINE_bool("shuffle_input", False, "shuffle order of train/test data")
 tf.flags.DEFINE_float("test_split", 0.3,
