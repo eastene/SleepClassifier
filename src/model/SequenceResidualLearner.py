@@ -25,56 +25,12 @@ class SequenceResidualLearner(RepresentationLearner):
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
-            """
-            Interchannel Features
-            """
-            self.extracted_output = self.rep_learner.pass_output()
-            # Conv Layer 1
-            self.conv_1_mixed = tf.layers.conv1d(
-                inputs=self.extracted_output,
-                filters=128,
-                kernel_size=8,
-                strides=1,
-                activation=tf.nn.relu,
-                padding='VALID',
-                name="conv1_mixed",
-                reuse=tf.AUTO_REUSE
-            )
-
-            # Conv Layer 2
-            self.conv_2_mixed = tf.layers.conv1d(
-                inputs=self.conv_1_mixed,
-                filters=128,
-                kernel_size=8,
-                strides=1,
-                activation=tf.nn.relu,
-                padding='VALID',
-                name="conv2_mixed",
-                reuse=tf.AUTO_REUSE
-            )
-
-            # Conv Layer 3
-            self.conv_3_mixed = tf.layers.conv1d(
-                inputs=self.conv_2_mixed,
-                filters=128,
-                kernel_size=8,
-                strides=1,
-                activation=tf.nn.relu,
-                padding='VALID',
-                name="conv3_mixed",
-                reuse=tf.AUTO_REUSE
-            )
-
-            # Max Pool Layer 1
-            self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_3_mixed, pool_size=4, strides=4)
-            self.feats_dropout = tf.layers.dropout(self.pool_mixed, rate=0.5, training=self.mode == "TRAIN")
-            self.feats_in = tf.layers.flatten(inputs=self.feats_dropout)
 
             """
             Shortcut Connect
             """
             self.seq_batch_normalizer = tf.layers.batch_normalization(
-                self.feats_in,
+                self.output_layer,
                 epsilon=1e-5,
                 reuse=tf.AUTO_REUSE,
                 name="seq_batch_normalizer"
@@ -87,8 +43,8 @@ class SequenceResidualLearner(RepresentationLearner):
             Bi-Directional LSTM
             """
 
-            self.input_seqs = tf.reshape(self.feats_in, (
-                FLAGS.sequence_batch_size, FLAGS.sequence_length, 6016))  # TODO: change back to 2816?
+            self.input_seqs = tf.reshape(self.output_layer, (
+                FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))  # TODO: change back to 2816?
 
             self.seq_batch_size = FLAGS.sequence_batch_size
 

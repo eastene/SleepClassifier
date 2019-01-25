@@ -193,8 +193,6 @@ class DeepSleepNet:
 
         labels = np.hstack(Y)
         predictions = np.hstack(Y_pred)
-        print(labels)
-        print(predictions)
         self.print_performance(labels, predictions)
 
     @staticmethod

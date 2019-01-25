@@ -309,7 +309,7 @@ class RepresentationLearner:
         CNN Output Layer
         """
         # Concatenate all outputs and flatten
-        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_2_large_mltch, self.pool_2_eeg],
+        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large],
                                     axis=1)
 
         self.dropout = tf.layers.dropout(self.cnn_output, rate=0.5, training=self.mode == "TRAIN")
