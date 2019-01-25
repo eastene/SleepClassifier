@@ -42,57 +42,6 @@ class DataPrepper:
         self.meta['rows'] = rows
         np.savez_compressed(os.path.join(FLAGS.meta_dir, os.path.splitext(META_INFO_FNAME)[0]), a=self.meta)
 
-    def csv2tfrecord(self, files):
-        # convert csv directly to tfrecord
-
-        # load all data
-        X = []
-        Y = []
-        sizes = []
-
-        self.files = files
-        for f in files:
-            data = np.genfromtxt(f, dtype=np.float32, delimiter=',', filling_values=[0])
-            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch]
-            if FLAGS.resample_rate > 0:
-                x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
-            X.append(x)
-            Y.append(y.astype(dtype=np.int64) - 1)
-            sizes.append(data.shape[0])
-
-        X_s, Y_s = np.vstack(X), np.hstack(Y)
-        X_s[X_s == np.inf] = 0
-        X_s[X_s == -np.inf] = 0
-        if FLAGS.oversample:
-            print("Pre Oversampling Label Counts {}".format(np.bincount(Y_s)))
-            #ros = RandomOverSampler()
-            #X_tmp, Y_tmp = ros.fit_sample(X_s, Y_s)
-            #print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
-        else:
-            X_tmp, Y_tmp = X_s, Y_s
-
-        print("Writing to tfrecords...", end=" ")
-        offset = 0
-        for i, f in enumerate(files):
-            out_str = os.path.splitext(os.path.basename(f))[0] + (
-                ".oversampled" if FLAGS.oversample else "") + '.tfrecords'
-            with tf.python_io.TFRecordWriter(os.path.join(FLAGS.tfrecord_dir, out_str)) as tfwriter:
-                for j in range(sizes[i]):
-                    example = tf.train.Example(
-                        features=tf.train.Features(
-                            feature={
-                                'signal': tf.train.Feature(
-                                    float_list=tf.train.FloatList(value=X_tmp[offset + j, :])),
-                                'label': tf.train.Feature(
-                                    int64_list=tf.train.Int64List(value=[Y_tmp[offset + j]]))
-                            }
-                        )
-                    )
-                    tfwriter.write(example.SerializeToString())
-            offset += sizes[i]
-        print("Done.")
-
     def find_missing(self, file_set1, file_set2):
         """
         Finds files not present in set1 that are in set2 (e.g. set_1 \ set_2)
@@ -107,22 +56,42 @@ class DataPrepper:
     def get_rows(self):
         return self.meta['rows']
 
-    def oversample(self, npz_files):
-        data = self.load_epochs(npz_files)
-        X = list(map(lambda x: x[0], data))
-        Y = list(map(lambda x: x[1], data))
-        print("Pre Oversampling Label Counts {}".format(np.bincount(Y)))
-
-        print("Post Oversampling Label Counts {}".format(np.bincount(Y_tmp)))
-
-    def load_epochs(self, npz_files):
-        data = []
+    def load_epochs(self, npz_files, train=True):
+        X = []
+        Y = []
+        if train:
+            print("Training Files:")
+        else:
+            print("Eval Files:")
         for f in npz_files:
+            print(f)
             data = np.load(f)
-            x = data[:, : FLAGS.sampling_rate * FLAGS.s_per_epoch]
-            y = data[:, FLAGS.sampling_rate * FLAGS.s_per_epoch]
+            x = data['x']
+            y = data['y']
             if FLAGS.resample_rate > 0:
                 x = x.reshape(x.shape[0], -1, FLAGS.resample_rate).mean(axis=2)
-            data.append(zip(x, y.astype(dtype=np.int64) - 1))
+            X.append(x)
+            Y.append(y.astype(dtype=np.int64))
 
-        return data
+        X_s, Y_s = np.vstack(X), np.hstack(Y)
+        X_s[X_s == np.inf] = 0
+        X_s[X_s == -np.inf] = 0
+
+        # only oversample training set (no need to oversample eval)
+        if FLAGS.oversample and train:
+            counts = np.bincount(Y_s)
+            print("Pre Oversampling Label Counts {}".format(counts))
+            X_os = []
+            Y_os = []
+            # random oversampling (make all classes equal to majority size)
+            max_count = max(counts)
+            for i, count in enumerate(counts):
+                inds = np.random.choice(count, size=max_count, replace=True)
+                Y_os.append(Y_s[Y_s == i][inds])
+                X_os.append(X_s[Y_s == i][inds])
+            x_out, y_out = np.vstack(X_os), np.hstack(Y_os)
+            print("Post Oversampling Label Counts {}".format(np.bincount(y_out)))
+        else:
+            x_out, y_out = X_s, Y_s
+
+        return list(zip(x_out, y_out))

@@ -37,10 +37,8 @@ class InputPipeline:
         self.data_len = 0
         self.meta_dir = FLAGS.meta_dir
         self.data_dir = FLAGS.data_dir
-        self.tfrecord_dir = FLAGS.tfrecord_dir
         self.seq_dir = FLAGS.seq_dir
         self.master_pattern = "*.csv"
-        self.tf_pattern = "*.tfrecords"
         self.seq_pattern = '*.npz'
         self.prepper = DataPrepper()
 
@@ -80,7 +78,7 @@ class InputPipeline:
                 self.has_seq_files = True
                 self.has_meta_info = True
 
-        elif self.has_masters and (len(self.seq_files) != len(self.master_files) // len(FLAGS.input_chs)):
+        elif self.has_masters and (len(self.seq_files) < len(self.master_files)):
             print("Missing some sequence files, generating...")
             missing_files = self.prepper.find_missing(self.master_files, self.seq_files)
             self.prepper.csv2npz(missing_files)
@@ -121,11 +119,8 @@ class InputPipeline:
         self.eval_seq_idx = 0  # tracks current eval sequence
 
         # Pretrain input
-        if FLAGS.oversample:
-            self.train_eps = self.prepper.oversample(self.train_seqs)
-        else:
-            self.train_eps = self.prepper.load_epochs(self.train_seqs)
-        self.eval_eps = self.prepper.load_epochs(self.eval_seqs)
+        self.train_eps = self.prepper.load_epochs(self.train_seqs)
+        self.eval_eps = self.prepper.load_epochs(self.eval_seqs, train=False)
         self.train_epoch = 0  # tracks current train epoch
         self.eval_epoch = 0  # tracks current eval epoch
 
@@ -204,9 +199,10 @@ class InputPipeline:
             raise IndexError()
         batch_size = FLAGS.batch_size if self.train_epoch + FLAGS.batch_size < len(self.train_eps) else len(
             self.train_eps) - self.train_epoch - 1
-        batch = self.train_eps[self.train_epoch:batch_size]
+        batch = list(zip(*self.train_eps[self.train_epoch:batch_size]))
         self.train_epoch += batch_size
-        return batch
+        print(np.vstack(batch[0]).shape)
+        return np.vstack(batch[0]), np.vstack(batch[1])
 
     def next_eval_elem(self, sequential=False):
         """
@@ -227,4 +223,4 @@ class InputPipeline:
             self.eval_eps) - self.eval_epoch - 1
         batch = self.eval_eps[self.eval_epoch:batch_size]
         self.eval_epoch += batch_size
-        return batch
+        return list(zip(*batch))
