@@ -22,10 +22,6 @@ class DeepSleepNet:
 
         # batch iterator
         self.input = InputPipeline()
-        self.next_elem_train_pre = self.input.next_train_elem()
-        self.next_elem_eval_pre = self.input.next_eval_elem()
-        self.next_elem_train_fine = self.input.next_train_elem
-        self.next_elem_eval_fine = self.input.next_eval_elem
 
         # define initialisation operator
         self.init_op = tf.global_variables_initializer()
@@ -38,17 +34,17 @@ class DeepSleepNet:
     def run_epoch_pretrain(self, sess):
         # PRETRAINING TRAIN LOOP
         for epoch in range(FLAGS.num_epochs_pretrain):
-            sess.run(self.input.initialize_train())
+            self.input.initialize_train()
             cost = 0.0
             n_batches = 0
 
             try:
                 while True:
-                    data = sess.run(self.next_elem_train_pre)
+                    data = self.input.next_train_elem()
                     _, c = self.seq_learn.pretrain(sess, data)
                     cost += c
                     n_batches += 1
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
             if epoch % 3 == 0:
@@ -68,7 +64,7 @@ class DeepSleepNet:
             # each epoch consists of a number of patient sequences
             try:
                 while True:
-                    seq_data = self.next_elem_train_fine(sequential=True)
+                    seq_data = self.input.next_train_elem(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
@@ -76,7 +72,7 @@ class DeepSleepNet:
                         cost_seq += c_seq
                         cost += c
                         n_batches += 1
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
             if epoch % 3 == 0:
@@ -103,8 +99,8 @@ class DeepSleepNet:
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
 
-            train_writer = tf.summary.FileWriter('train', sess.graph)
-            train_writer.add_graph(tf.get_default_graph())
+            #train_writer = tf.summary.FileWriter('train', sess.graph)
+            #train_writer.add_graph(tf.get_default_graph())
 
             if FLAGS.cnfsn_mat:
                 print("Pretraining Performance:")
@@ -149,17 +145,17 @@ class DeepSleepNet:
             # PRETRAINING EVAL LOOP
             m_tot = 0
             n_batches = 0
-            sess.run(self.input.initialize_eval())
+            self.input.initialize_eval()
 
             # Evaluate
             try:
                 while True:
-                    data = sess.run(self.next_elem_eval_pre)
+                    data = self.input.next_eval_elem()
                     m = self.seq_learn.evaluate_rep_learner(sess, data)
                     n_batches += 1
                     m_tot += m[0]
 
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
             print("Representation Learner Accuracy: {}".format(m_tot / n_batches))
@@ -172,7 +168,7 @@ class DeepSleepNet:
             # Evaluate
             try:
                 while True:
-                    seq_data = self.next_elem_eval_fine(sequential=True)
+                    seq_data = self.input.next_eval_elem(sequential=True)
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
@@ -180,42 +176,24 @@ class DeepSleepNet:
                         n_batches += 1
                         m_tot += m
 
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
             print("Overall Accuracy: {}".format(m_tot / n_batches))
-
-    def test(self, sess, X, y, rep_only=False):
-        Y = []
-        Y_pred = []
-        if rep_only:
-            y_pred = self.seq_learn.predict_rep_learner(sess, [X, y])
-            Y.append(y.flatten())
-            Y_pred.append(np.vstack(y_pred).flatten())
-        else:
-            data = self.input.batch_seq_data(X, y)
-            for batch in data:
-                y_pred =  self.seq_learn.predict(sess, batch)
-                Y.append(batch[1].flatten())
-                Y_pred.append(np.vstack(y_pred).flatten())
-
-        labels = np.array(Y).flatten()
-        predictions = np.array(Y_pred).flatten()
-        self.print_performance(labels, predictions)
 
     def print_confusion_matrix(self, sess, rep_only=False):
         # Print final Confusion Matrix
         Y = []
         Y_pred = []
         if rep_only:
-            sess.run(self.input.initialize_eval())
+            self.input.initialize_eval()
             try:
                 while True:
-                    data = sess.run(self.next_elem_eval_fine())
+                    data = self.input.next_eval_elem()
                     y_pred = self.seq_learn.predict_rep_learner(sess, data)
                     Y.append(data[1].flatten())
                     Y_pred.append(np.vstack(y_pred).flatten())
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
         else:
@@ -223,13 +201,13 @@ class DeepSleepNet:
             try:
                 while True:
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
-                    data = self.next_elem_eval_fine(sequential=True)
+                    data = self.input.next_eval_elem(sequential=True)
                     for batch in data:
                         self.seq_learn.reset_lstm_state(sess)
                         y_pred = self.seq_learn.predict(sess, batch)
                         Y.append(batch[1].flatten())
                         Y_pred.append(np.vstack(y_pred).flatten())
-            except tf.errors.OutOfRangeError:
+            except IndexError:
                 pass  # reached end of epoch
 
         labels = np.array(Y).flatten()

@@ -32,7 +32,6 @@ class InputPipeline:
         self.has_masters = True
         self.has_meta_info = True
         self.has_seq_files = True
-        self.has_tfrecords = True
 
         # Directories and file patterns
         self.data_len = 0
@@ -77,14 +76,14 @@ class InputPipeline:
 
             else:
                 print("Generating sequence files from master files...")
-                self.prepper.csv2npz_mltch(self.master_files)
+                self.prepper.csv2npz(self.master_files)
                 self.has_seq_files = True
                 self.has_meta_info = True
 
         elif self.has_masters and (len(self.seq_files) != len(self.master_files) // len(FLAGS.input_chs)):
             print("Missing some sequence files, generating...")
             missing_files = self.prepper.find_missing(self.master_files, self.seq_files)
-            self.prepper.csv2npz_mltch(missing_files)
+            self.prepper.csv2npz(missing_files)
             # leave has_meta_info false if already false, since it will now be invalid anyway
 
         elif not self.has_masters:
@@ -92,7 +91,7 @@ class InputPipeline:
 
         # if only 1 sequence file, test/train split cannot be used as normal (will truncate sleep/wake cycle)
         if len(self.seq_files) == 1 and input("Only 1 input file detected! Train and test on "
-                                                "same file (otherwise, split file manually)? (y/n): ").lower() != 'y':
+                                              "same file (otherwise, split file manually)? (y/n): ").lower() != 'y':
             print("Terminating")
             exit(1)
 
@@ -100,26 +99,7 @@ class InputPipeline:
         self.seq_files = glob.glob(path.join(self.seq_dir, self.seq_pattern))
 
         """
-        Step 4: Check for tfrecords files
-        """
-        # Examples used by feature representation learner, can be in random order
-        self.pretrain_files = glob.glob(path.join(self.tfrecord_dir, self.tf_pattern))
-
-        if len(self.pretrain_files) == 0:
-            print("No tfrecord files found for pretraining. Generating...")
-            self.prepper.npz2tfrecord(self.seq_files)
-
-        else:
-            missing_files = self.prepper.find_missing(self.pretrain_files, self.seq_files)
-            if len(missing_files) > 0:
-                print("Not enough data files found in tfrecords format for optimized pretraining.")
-                print("Creating missing tfrecords files...")
-                self.prepper.npz2tfrecord(missing_files)
-        # reglob to capture any updates that may have been made
-        self.pretrain_files = glob.glob(path.join(self.tfrecord_dir, self.tf_pattern))
-
-        """
-        Step 5: Fill in pipeline meta-info
+        Step 4: Fill in pipeline meta-info
         """
 
         if not self.has_meta_info:
@@ -130,63 +110,30 @@ class InputPipeline:
             self.data_len = self.prepper.get_rows()
 
         """
-        Step 6: Define pipeline functionality
+        Step 5: Define pipeline functionality
         """
-        # Pretrain input
-        self.pretrain_dataset = self.input_fn()
-        num_batches = self.data_len // FLAGS.batch_size
-        test_split_batches = int(num_batches * FLAGS.test_split)
-        self.train_iter = self.pretrain_dataset.skip(test_split_batches).make_initializable_iterator()
-        self.eval_iter = self.pretrain_dataset.take(test_split_batches).make_initializable_iterator()
-
-        # Finetune input
         test_split = max(1, int(len(self.seq_files) * FLAGS.test_split)) if len(self.seq_files) > 1 else 0
-        self.train_seqs = self.seq_files[:test_split]
-        self.eval_seqs = self.seq_files[test_split:]
+        if FLAGS.shuffle_input:
+            rand.shuffle(self.seq_files)
+        self.train_seqs = self.seq_files[test_split:]
+        self.eval_seqs = self.seq_files[:test_split]
         self.train_seq_idx = 0  # tracks current train sequence
         self.eval_seq_idx = 0  # tracks current eval sequence
-        self.buffer = []
+
+        # Pretrain input
+        if FLAGS.oversample:
+            self.train_eps = self.prepper.oversample(self.train_seqs)
+        else:
+            self.train_eps = self.prepper.load_epochs(self.train_seqs)
+        self.eval_eps = self.prepper.load_epochs(self.eval_seqs)
+        self.train_epoch = 0  # tracks current train epoch
+        self.eval_epoch = 0  # tracks current eval epoch
 
     """
     *
     *  Data Parsing and Transformation Functions (for internal use)
     *
     """
-
-    def parse_fn(self, example):
-        # format of each training example
-        example_fmt = {
-            "signal": tf.FixedLenFeature((1, EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch * len(FLAGS.input_chs)), tf.float32),
-            "label": tf.FixedLenFeature((), tf.int64, default_value=-1)
-        }
-
-        parsed = tf.parse_single_example(example, example_fmt)
-        signals = tf.reshape(parsed['signal'], shape=(EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch, len(FLAGS.input_chs)))
-        return signals, parsed['label']
-
-    def input_fn(self):
-        print("Looking for data files matching: {}\nIn: {}".format(self.tf_pattern, self.tfrecord_dir))
-        files = tf.data.Dataset.list_files(file_pattern=path.join(self.tfrecord_dir, self.tf_pattern))
-
-        # interleave reading of dataset for parallel I/O
-        dataset = files.interleave(
-                tf.data.TFRecordDataset, cycle_length=FLAGS.num_parallel_readers
-        )
-
-        dataset = dataset.cache()
-
-        # shuffle data
-        dataset = dataset.shuffle(buffer_size=FLAGS.shuffle_buffer_size)
-
-        # parse the data and prepares the batches in parallel (helps most with larger batches)
-        dataset = dataset.map(map_func=self.parse_fn)
-        dataset = dataset.batch(batch_size=FLAGS.batch_size)
-
-        # prefetch data so that the CPU can prepare the next batch(s) while the GPU trains
-        # recommmend setting buffer size to number of training examples per training step
-        dataset = dataset.prefetch(buffer_size=FLAGS.prefetch_buffer_size)
-
-        return dataset
 
     def get_next_seq(self, file):
         data = np.load(file)
@@ -228,15 +175,17 @@ class InputPipeline:
         if sequential:
             rand.shuffle(self.train_seqs)
             self.train_seq_idx = 0
-            return None
-        return self.train_iter.initializer
+        else:
+            rand.shuffle(self.train_eps)
+            self.train_epoch = 0
 
     def initialize_eval(self, sequential=False):
         if sequential:
             rand.shuffle(self.eval_seqs)
             self.eval_seq_idx = 0
-            return None
-        return self.eval_iter.initializer
+        else:
+            rand.shuffle(self.eval_eps)
+            self.eval_epoch = 0
 
     def next_train_elem(self, sequential=False):
         """
@@ -246,12 +195,18 @@ class InputPipeline:
         """
         if sequential:
             if self.train_seq_idx >= len(self.train_seqs):
-                raise tf.errors.OutOfRangeError(self.train_iter.get_next(), None, "")
+                raise IndexError()
             file = self.train_seqs[self.train_seq_idx]
             self.train_seq_idx += 1
             return self.get_next_seq(file)
 
-        return self.train_iter.get_next()
+        if self.train_epoch >= len(self.train_eps):
+            raise IndexError()
+        batch_size = FLAGS.batch_size if self.train_epoch + FLAGS.batch_size < len(self.train_eps) else len(
+            self.train_eps) - self.train_epoch - 1
+        batch = self.train_eps[self.train_epoch:batch_size]
+        self.train_epoch += batch_size
+        return batch
 
     def next_eval_elem(self, sequential=False):
         """
@@ -261,9 +216,15 @@ class InputPipeline:
         """
         if sequential:
             if self.eval_seq_idx >= len(self.eval_seqs):
-                raise tf.errors.OutOfRangeError(self.eval_iter.get_next(), None, "")
+                raise IndexError()
             file = self.eval_seqs[self.eval_seq_idx]
             self.eval_seq_idx += 1
             return self.get_next_seq(file)
 
-        return self.eval_iter.get_next()
+        if self.eval_epoch >= len(self.eval_eps):
+            raise IndexError()
+        batch_size = FLAGS.batch_size if self.eval_epoch + FLAGS.batch_size < len(self.eval_eps) else len(
+            self.eval_eps) - self.eval_epoch - 1
+        batch = self.eval_eps[self.eval_epoch:batch_size]
+        self.eval_epoch += batch_size
+        return batch
