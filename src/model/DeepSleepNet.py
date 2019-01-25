@@ -72,7 +72,7 @@ class DeepSleepNet:
                     # each patient sequence is batched, and the LSTM is reinitialized for each patient
                     self.seq_learn.reset_lstm_state(sess)
                     for batch in seq_data:
-                        _, _, c_seq, c, _ = self.seq_learn.train(sess, batch)
+                        c, c_seq = self.seq_learn.train(sess, batch)
                         cost_seq += c_seq
                         cost += c
                         n_batches += 1
@@ -102,6 +102,10 @@ class DeepSleepNet:
             self.run_epoch_pretrain(sess)
             print("Evaluating Representation Learner...", end=" ")
             self.evaluate(sess, rep_only=True)
+
+            train_writer = tf.summary.FileWriter('train', sess.graph)
+            train_writer.add_graph(tf.get_default_graph())
+
             if FLAGS.cnfsn_mat:
                 print("Pretraining Performance:")
                 self.print_confusion_matrix(sess, rep_only=True)
@@ -115,9 +119,6 @@ class DeepSleepNet:
                     X.append(data['x'])
                     Y.append(data['y'])
                 self.test(sess, np.vstack(X), np.hstack(Y), rep_only=True)
-
-            # train_writer = tf.summary.FileWriter('train', sess.graph)
-            # train_writer.add_graph(tf.get_default_graph())
 
             """
             Train Sequence Learner (Finetuning)
@@ -147,10 +148,6 @@ class DeepSleepNet:
         if rep_only:
             # PRETRAINING EVAL LOOP
             m_tot = 0
-            m_tot_l = 0
-            m_tot_s = 0
-            m_tot_m = 0
-            m_tot_eeg = 0
             n_batches = 0
             sess.run(self.input.initialize_eval())
 
@@ -159,23 +156,13 @@ class DeepSleepNet:
                 while True:
                     data = sess.run(self.next_elem_eval_pre)
                     m = self.seq_learn.evaluate_rep_learner(sess, data)
-                    m_l, m_s, m_m, m_eeg = self.seq_learn.eval_branches(sess, data)
-                    m_tot_m += m_m
                     n_batches += 1
                     m_tot += m[0]
-                    m_tot_l += m_l
-                    m_tot_s += m_s
-                    m_tot_eeg += m_eeg
 
             except tf.errors.OutOfRangeError:
                 pass  # reached end of epoch
 
             print("Representation Learner Accuracy: {}".format(m_tot / n_batches))
-            print("Large-Filter Branch Accuracy: {}".format(m_tot_l / n_batches))
-            print("Small-Filter Branch Accuracy: {}".format(m_tot_s / n_batches))
-            print("Mixed-channel Large-Filter Branch Accuracy: {}".format(m_tot_m / n_batches))
-            print("EEG/EOG Branch Accuracy: {}".format(m_tot_eeg / n_batches))
-
         else:
             # FINETUNING EVAL LOOP
             m_tot = 0

@@ -11,7 +11,8 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def __init__(self):
         # Initialize Rep Learner
-        super(SequenceResidualLearner, self).__init__()
+        self.rep_learner = super(SequenceResidualLearner, self)
+        self.rep_learner.__init__()
 
         # Housekeeping Parameters
         self.seq_learn_dir = path.join(FLAGS.checkpoint_dir, "seq_learn", "")
@@ -21,17 +22,13 @@ class SequenceResidualLearner(RepresentationLearner):
         # self.num_lstm_layer = 2  unused
 
         # Begin Define Model
-        """
-        Input Layer
-        """
-        self.rep_learn = self.output_layer  # output of representation learner
 
         # scoped for training with different training rate than representation learner
         with tf.variable_scope("seq_learner") as seq_learner:
             """
             Interchannel Features
             """
-            self.extracted_output = tf.concat([self.pool_2_large_mltch, self.pool_2_eeg], axis=1)
+            self.extracted_output = self.rep_learner.pass_output()
             # Conv Layer 1
             self.conv_1_mixed = tf.layers.conv1d(
                 inputs=self.extracted_output,
@@ -43,7 +40,8 @@ class SequenceResidualLearner(RepresentationLearner):
                 name="conv1_mixed",
                 reuse=tf.AUTO_REUSE
             )
-            # Conv Layer 1
+
+            # Conv Layer 2
             self.conv_2_mixed = tf.layers.conv1d(
                 inputs=self.conv_1_mixed,
                 filters=128,
@@ -54,7 +52,8 @@ class SequenceResidualLearner(RepresentationLearner):
                 name="conv2_mixed",
                 reuse=tf.AUTO_REUSE
             )
-            # Conv Layer 1
+
+            # Conv Layer 3
             self.conv_3_mixed = tf.layers.conv1d(
                 inputs=self.conv_2_mixed,
                 filters=128,
@@ -65,12 +64,12 @@ class SequenceResidualLearner(RepresentationLearner):
                 name="conv3_mixed",
                 reuse=tf.AUTO_REUSE
             )
+
             # Max Pool Layer 1
             self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_3_mixed, pool_size=4, strides=4)
-
-            self.sig_feats = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_mixed], axis=1)
-            self.feats_dropout = tf.layers.dropout(self.sig_feats, rate=0.5, training=self.mode == "TRAIN")
+            self.feats_dropout = tf.layers.dropout(self.pool_mixed, rate=0.5, training=self.mode == "TRAIN")
             self.feats_in = tf.layers.flatten(inputs=self.feats_dropout)
+
             """
             Shortcut Connect
             """
@@ -88,8 +87,8 @@ class SequenceResidualLearner(RepresentationLearner):
             Bi-Directional LSTM
             """
 
-            self.input_seqs = tf.reshape(tf.layers.flatten(self.pool_mixed), (
-            FLAGS.sequence_batch_size, FLAGS.sequence_length, 5248))  # TODO: change back to 2816?
+            self.input_seqs = tf.reshape(self.feats_in, (
+                FLAGS.sequence_batch_size, FLAGS.sequence_length, 6016))  # TODO: change back to 2816?
 
             self.seq_batch_size = FLAGS.sequence_batch_size
 
@@ -133,7 +132,8 @@ class SequenceResidualLearner(RepresentationLearner):
             self.update_op = self.get_state_update_op(self.states, self.new_states)
 
             # concatenate forward and backward lstm outputs
-            self.bd_lstm_out =  tf.reshape(tf.concat(self.bd_lstm, 1), shape=(FLAGS.sequence_length * self.seq_batch_size, 1024))
+            self.bd_lstm_out = tf.reshape(tf.concat(self.bd_lstm, 1),
+                                          shape=(FLAGS.sequence_length * self.seq_batch_size, 1024))
 
             """
             Output Layer
@@ -174,7 +174,8 @@ class SequenceResidualLearner(RepresentationLearner):
             """
             Save & Restore
             """
-            self.seq_saver = tf.train.Saver()  # saves only sequence representation learner
+            self.seq_saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                                                       scope='seq_learner'))
 
     def get_state_variables(self, cells):
         # For each layer, get the initial state and make a variable out of it
@@ -211,20 +212,23 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def pretrain(self, sess, data):
         self.phase = "PRE"
-        return super(SequenceResidualLearner, self).train(sess, data)
+        return self.rep_learner.train(sess, data)
 
     def train(self, sess, data):
         self.mode = "TRAIN"
         self.phase = "FINE"
-        self.learning_rate = FLAGS.learn_rate_fine  # turn down the learning rate for the feature learner
         feed_dict = {
             self.x: data[0],
             self.y: data[1]
         }
-        return sess.run([self.seq_train_op, self.train_op, self.seq_loss, self.loss, self.update_op], feed_dict=feed_dict)
+        _, loss = self.rep_learner.train(sess, data)
+        sess.run(self.seq_train_op, feed_dict=feed_dict)
+        seq_loss = sess.run(self.seq_loss, feed_dict=feed_dict)
+        sess.run(self.update_op, feed_dict=feed_dict)
+        return loss, seq_loss
 
     def evaluate_rep_learner(self, sess, data):
-        return super(SequenceResidualLearner, self).evaluate(sess, data)
+        return self.rep_learner.evaluate(sess, data)
 
     def evaluate(self, sess, data):
         self.mode = "EVAL"
@@ -236,12 +240,12 @@ class SequenceResidualLearner(RepresentationLearner):
 
     def checkpoint(self, sess):
         # checkpoint entire model, including separate rep learner
-        super(SequenceResidualLearner, self).checkpoint(sess)
+        self.rep_learner.checkpoint(sess)
         save_path = self.seq_saver.save(sess, self.seq_learn_dir)
         print("Sequential Learner saved to: {}".format(save_path))
 
     def predict_rep_learner(self, sess, data):
-        return super(SequenceResidualLearner, self).predict(sess, data)
+        return self.rep_learner.predict(sess, data)
 
     def predict(self, sess, data):
         self.mode = "PREDICT"
@@ -252,6 +256,7 @@ class SequenceResidualLearner(RepresentationLearner):
         return sess.run([self.seq_pred_classes], feed_dict=feed_dict)
 
     def restore(self, sess):
+        self.rep_learner.restore(sess)
         print("Restoring Sequence Learner...", end=" ")
         if tf.train.checkpoint_exists(self.seq_learn_dir):
             self.seq_saver.restore(sess, self.seq_learn_dir)  # restore only rep learner model
@@ -260,4 +265,4 @@ class SequenceResidualLearner(RepresentationLearner):
             print("No existing Sequential Learner found at: {}. Initializing.".format(
                 self.seq_learn_dir))
             sess.run(tf.global_variables_initializer())
-            super(SequenceResidualLearner, self).restore(sess)
+            self.rep_learner.restore(sess) # reload since variables will be reinitialized

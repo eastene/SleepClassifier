@@ -235,7 +235,7 @@ class RepresentationLearner:
 
         # Dropout
         self.dropout_eeg = tf.layers.dropout(inputs=self.pool_1_eeg, rate=0.5,
-                                                     training=self.mode == "TRAIN")
+                                             training=self.mode == "TRAIN")
 
         # Conv Layer 2
         self.conv_2_eeg = tf.layers.conv1d(
@@ -306,34 +306,11 @@ class RepresentationLearner:
         self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_2_mixed, pool_size=4, strides=4)
 
         """
-        CNN Branch Evaluation
-        """
-
-        large_output = tf.layers.flatten(self.pool_2_large)
-        large_logits = tf.layers.dense(inputs=large_output, units=5, name='large_logits')
-        large_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(large_logits, axis=1))
-        self.large_eval = tf.reduce_mean(tf.cast(large_correct_classes, tf.float32))
-
-        small_output = tf.layers.flatten(self.pool_2_small)
-        small_logits = tf.layers.dense(inputs=small_output, units=5, name='small_logits')
-        small_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(small_logits, axis=1))
-        self.small_eval = tf.reduce_mean(tf.cast(small_correct_classes, tf.float32))
-
-        mltch_output = tf.layers.flatten(self.pool_2_large_mltch)
-        mltch_logits = tf.layers.dense(inputs=mltch_output, units=5, name='mltch_logits')
-        mltch_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(mltch_logits, axis=1))
-        self.mltch_eval = tf.reduce_mean(tf.cast(mltch_correct_classes, tf.float32))
-
-        eeg_output = tf.layers.flatten(self.pool_2_eeg)
-        eeg_logits = tf.layers.dense(inputs=eeg_output, units=5, name='eeg_logits')
-        eeg_correct_classes = tf.equal(tf.cast(self.y, tf.int64), tf.argmax(eeg_logits, axis=1))
-        self.eeg_eval = tf.reduce_mean(tf.cast(eeg_correct_classes, tf.float32))
-
-        """
         CNN Output Layer
         """
         # Concatenate all outputs and flatten
-        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_2_large_mltch, self.pool_2_eeg], axis=1)
+        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_2_large_mltch, self.pool_2_eeg],
+                                    axis=1)
 
         self.dropout = tf.layers.dropout(self.cnn_output, rate=0.5, training=self.mode == "TRAIN")
         self.output_layer = tf.layers.flatten(inputs=self.dropout)
@@ -348,7 +325,7 @@ class RepresentationLearner:
         self.loss = tf.losses.sparse_softmax_cross_entropy(labels=self.y, logits=self.logits)
         self.optimiser = tf.train.AdamOptimizer(
             learning_rate=FLAGS.learn_rate_pre if self.phase == "PRE" else FLAGS.learn_rate_fine,
-            beta1 = 0.9, beta2 = 0.999)
+            beta1=0.9, beta2=0.999)
         self.train_op = self.optimiser.minimize(self.loss, global_step=tf.train.get_global_step())
 
         """
@@ -405,11 +382,5 @@ class RepresentationLearner:
             print("No Representation Learner found at: {}. Initializing.".format(self.rep_learn_dir))
             sess.run(tf.global_variables_initializer())
 
-    def eval_branches(self, sess, data):
-        self.mode = "EVAL"
-        feed_dict = {
-            self.x: data[0],
-            self.y: data[1]
-        }
-
-        return sess.run([self.large_eval, self.small_eval, self.mltch_eval, self.eeg_eval], feed_dict=feed_dict)
+    def pass_output(self):
+        return self.dropout
