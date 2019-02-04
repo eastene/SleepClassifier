@@ -277,40 +277,10 @@ class RepresentationLearner:
         self.pool_2_eeg = tf.layers.max_pooling1d(inputs=self.conv_4_eeg, pool_size=4, strides=4)
 
         """
-        Interchannel Features
-        """
-        self.extracted_output = tf.concat([self.pool_2_large_mltch, self.pool_2_eeg], axis=1)
-        # Conv Layer 1
-        self.conv_1_mixed = tf.layers.conv1d(
-            inputs=self.extracted_output,
-            filters=128,
-            kernel_size=6,
-            strides=1,
-            activation=tf.nn.relu,
-            padding='SAME',
-            name="conv1_mixed",
-            reuse=tf.AUTO_REUSE
-        )
-        # Conv Layer 1
-        self.conv_2_mixed = tf.layers.conv1d(
-            inputs=self.extracted_output,
-            filters=128,
-            kernel_size=6,
-            strides=1,
-            activation=tf.nn.relu,
-            padding='SAME',
-            name="conv2_mixed",
-            reuse=tf.AUTO_REUSE
-        )
-        # Max Pool Layer 1
-        self.pool_mixed = tf.layers.max_pooling1d(inputs=self.conv_2_mixed, pool_size=4, strides=4)
-
-        """
         CNN Output Layer
         """
         # Concatenate all outputs and flatten
-        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large],
-                                    axis=1)
+        self.cnn_output = tf.concat([self.pool_2_small, self.pool_2_large, self.pool_2_eeg], axis=1)
 
         self.dropout = tf.layers.dropout(self.cnn_output, rate=0.5, training=self.mode == "TRAIN")
         self.output_layer = tf.layers.flatten(inputs=self.dropout)

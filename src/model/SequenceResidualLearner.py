@@ -44,7 +44,7 @@ class SequenceResidualLearner(RepresentationLearner):
             """
 
             self.input_seqs = tf.reshape(self.output_layer, (
-                FLAGS.sequence_batch_size, FLAGS.sequence_length, 2816))  # TODO: change back to 2816?
+                FLAGS.sequence_batch_size, FLAGS.sequence_length, 26752))  # TODO: change back to 2816?
 
             self.seq_batch_size = FLAGS.sequence_batch_size
 

@@ -1,8 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from os import path
-from glob import glob
+from os import environ
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import precision_recall_fscore_support
 
@@ -14,6 +13,9 @@ from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 class DeepSleepNet:
 
     def __init__(self):
+        # set GPU parameters
+        environ["CUDA_VISIBLE_DEVICES"] = "1"
+
         # hyper-parameters
         self.sampling_rate = EFFECTIVE_SAMPLE_RATE
 
@@ -86,7 +88,6 @@ class DeepSleepNet:
             self.loss_tr_fine_seq[epoch] = cost_seq / n_batches
 
     def train(self):
-
         with tf.Session() as sess:
             """
             Train Representation Learner (Pretraining)

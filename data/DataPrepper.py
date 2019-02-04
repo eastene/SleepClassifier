@@ -33,7 +33,7 @@ class DataPrepper:
         rows = self.meta['rows']
         for i, f in enumerate(files):
             print("Processing channel {}/{}".format(i, len(files)))
-            data = np.genfromtxt(f, dtype=np.float32, delimiter=',', filling_values=[0])
+            data = np.squeeze(np.genfromtxt(f, dtype=np.float32, delimiter=',', filling_values=[0]))
 
             # only if x.shape[1] == EFFECTIVE_SAMPLE_RATE will x be used without reshaping
             if data.shape[1] == EFFECTIVE_SAMPLE_RATE * FLAGS.s_per_epoch + 1:
@@ -84,8 +84,8 @@ class DataPrepper:
         for f in npz_files:
             print(f)
             data = np.load(f)
-            X.append(data['x'])
-            Y.append(data['y'].astype(dtype=np.int64))
+            X.append(np.squeeze(data['x']))
+            Y.append(np.squeeze(data['y'].astype(dtype=np.int64)))
 
         X_s, Y_s = np.vstack(X), np.hstack(Y)
         X_s[X_s == np.inf] = 0
