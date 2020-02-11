@@ -1,95 +1,72 @@
-import tensorflow as tf
-
 import os.path
+import argparse
 
-tf.logging.set_verbosity(tf.logging.INFO)
-
-"""
-*
-*  Input Pipeline Flags
-*
-"""
-tf.flags.DEFINE_integer("num_parallel_readers", 8, "number of parallel I/O threads")
-tf.flags.DEFINE_integer("shuffle_buffer_size", 100, "size (in batches) of in-memory buffer for dataset shuffling")
-tf.flags.DEFINE_integer("num_parallel_calls", 8, "number of parallel dataset parsing threads "
-                                                 "(recommended to be equal to number of CPU cores")
-tf.flags.DEFINE_integer("prefetch_buffer_size", 100,
-                        "size (in batches) of in-memory buffer to prefetch records before parsing")
+parser = argparse.ArgumentParser()
 
 """
 *
 *  Representation Learner Flags
 *
 """
-tf.flags.DEFINE_integer("num_epochs_pretrain", 100, "number of epochs for pre-training")
-tf.flags.DEFINE_integer("batch_size", 100, "batch size")
-tf.flags.DEFINE_float("learn_rate_pre", 0.0001, "learning rate for pretraining")
+parser.add_argument("--num_epochs_pretrain", type=int, default=100, help="number of epochs for pre-training",
+                    required=False)
+parser.add_argument("--batch_size", type=int, default=100, help="batch size", required=False)
+parser.add_argument("--learn_rate_pre", type=float, default=0.0001, help="learning rate for pretraining",
+                    required=False)
 
 """
 *
 *  Sequence Residual Learner Flags
 *
 """
-tf.flags.DEFINE_integer("num_epochs_finetune", 200, "number of epochs for fine tuning")
-tf.flags.DEFINE_integer("sequence_batch_size", 10, "batch size used in finetuning on sequence data")
-tf.flags.DEFINE_integer("sequence_length", 25, "length of each sequence fed into the LSTM from the sequence data")
-tf.flags.DEFINE_float("learn_rate_fine", 0.000001, "learning rate for pretraining")
+parser.add_argument("--num_epochs_finetune", type=int, default=200, help="number of epochs for fine tuning",
+                    required=False)
+parser.add_argument("--sequence_batch_size", type=int, default=10,
+                    help="batch size used in finetuning on sequence data",
+                    required=False)
+parser.add_argument("--sequence_length", type=int, default=25,
+                    help="length of each sequence fed into the LSTM from the sequence data", required=False)
+parser.add_argument("--learn_rate_fine", type=float, default=0.000001, help="learning rate for finetuning",
+                    required=False)
 
 """
 *
 *  Overall Model Flags
 *
 """
-tf.flags.DEFINE_integer("sampling_rate", 2000, "sampling rate used to generate signal (hz)")
-tf.flags.DEFINE_integer("resample_rate", 0, "rate at which to downsample the input signal")
-tf.flags.DEFINE_list("input_chs", 'eeg', "name of input channels (e.g. [eeg, eog] is 2 channels), input channel "
-                                         "name should appear in file name and be unique to that data type")
-tf.flags.DEFINE_integer("s_per_epoch", 30, "seconds of signal data considered as a single epoch")
-tf.flags.DEFINE_string("checkpoint_dir", os.path.join(os.path.dirname(os.path.realpath(__file__)), "tmp/"),
-                       "directory in which to save model parameters while training")
+parser.add_argument("--sampling_rate", type=int, default=1000, help="sampling rate used to generate signal (hz)",
+                    required=False)
+parser.add_argument("--downsample_rate", type=int, default=0, help="rate at which to downsample the input signal",
+                    required=False)
+parser.add_argument("--s_per_epoch", type=int, default=30, help="seconds of signal data considered as a single epoch",
+                    required=False)
+parser.add_argument("--checkpoint_dir", type=str,
+                    default=os.path.join(os.path.dirname(os.path.realpath(__file__)), "tmp/"),
+                    help="directory in which to save model parameters while training", required=False)
 
 """
 *
 *  Data Flags
 *
 """
-tf.flags.DEFINE_string("data_dir",
-                       os.path.abspath(
-                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
-                       "Path to directory containing data files")
-tf.flags.DEFINE_string("seq_dir",
-                       os.path.abspath(
-                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
-                                        "data/seqs/")),
-                       "Path to directory containing sequence data as compressed numpy files")
-tf.flags.DEFINE_string("test_dir", "",
-                       "Path to separate test sequences (in npz format), [optional]")
-tf.flags.DEFINE_string("tfrecord_dir",
-                       os.path.abspath(
-                           os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir,
-                                        "data/tfrecords/")),
-                       "Path to directory containing data in .tfrecords format "
-                       "for pretraining (if different from data_dir)")
-tf.flags.DEFINE_string("meta_dir", os.path.dirname(os.path.realpath(__file__)),
-                       "Path to directory containing data meta info")
-tf.flags.DEFINE_bool("oversample", True, "whether to oversample input to the representation learner, "
-                                         "requires rebuilding the tfrecords if altered")
-tf.flags.DEFINE_float("test_split", 0.3,
-                      "ratio of data to set aside for evaluation "
-                      "(signal epochs in pretraining and signal files in finetuning")
-tf.flags.DEFINE_string("file_pattern", "*.csv", "file pattern of data files containing original signals")
-tf.flags.DEFINE_integer("seq_buff_size", 15, "number of full sequences to keep in buffer at a time")
-
+parser.add_argument("--data_dir", type=str,
+                    default=os.path.abspath(
+                        os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, "data/")),
+                    help="Path to top-level directory containing data files", required=False)
+parser.add_argument("--test_split", type=float, default=0.3, help="ratio of data to set aside for evaluation",
+                    required=False)
+parser.add_argument("--val_split", type=float, default=0.1, help="ratio of data to set aside for validation",
+                    required=False)
 
 """
 *
 * Output Flags
 *
 """
-tf.flags.DEFINE_bool("cnfsn_mat", False, "print confusion matrix on last evaluation after training model")
-tf.flags.DEFINE_bool("plot_loss", False, "plot the loss over training")
+parser.add_argument("--cnfsn_mat", type=bool, default=False,
+                    help="print confusion matrix on last evaluation after training model", required=False)
+parser.add_argument("--plot_loss", type=bool, default=False, help="plot the loss over training", required=False)
 
-FLAGS = tf.flags.FLAGS
+FLAGS = parser.parse_args()
 
-EFFECTIVE_SAMPLE_RATE = FLAGS.sampling_rate // max(FLAGS.resample_rate, 1)
-META_INFO_FNAME = 'meta_info.npz'
+EFFECTIVE_SAMPLE_RATE = FLAGS.sampling_rate // max(FLAGS.downsample_rate, 1)
