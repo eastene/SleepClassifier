@@ -72,7 +72,7 @@ class DataGenerator(keras.utils.Sequence):
             # Store class
             y[i] = data['y']
 
-        return X, y #keras.utils.to_categorical(y, num_classes=self.n_classes)
+        return X, y
 
     def on_epoch_end(self):
         """
