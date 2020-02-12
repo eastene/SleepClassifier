@@ -4,11 +4,11 @@ import tensorflow.keras as keras
 
 class RepresentationLearner(keras.Model):
 
-    def __init__(self, sampling_rate=1000, use_dropout=False):
+    def __init__(self, sampling_rate=1000, use_dp=False):
         super(RepresentationLearner, self).__init__(name='rl')
 
         self.sampling_rate = sampling_rate
-        self.use_dp = use_dropout
+        self.use_dp = use_dp
 
         self.batch_norm = keras.layers.BatchNormalization()
 

@@ -45,15 +45,12 @@ class DataGenerator(keras.utils.Sequence):
         # Generate indexes of the batch
         indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
 
-        # Find list of IDs
-        list_IDs_temp = [self.list_IDs[k] for k in indexes]
-
         # Generate data
-        X, y = self.__data_generation(list_IDs_temp)
+        X, y = self.__data_generation(indexes)
 
         return X, y
 
-    def __data_generation(self, list_IDs_temp):
+    def __data_generation(self, batch_inds):
         """
         Generates data containing batch_size samples
         :param list_IDs_temp:
@@ -64,15 +61,17 @@ class DataGenerator(keras.utils.Sequence):
         y = np.empty(self.batch_size, dtype=int)
 
         # Generate data
-        for i, ID in enumerate(list_IDs_temp):
+        for i, k in enumerate(batch_inds):
             # Store sample
-            data = np.load(ID)
-            X[i,] = data['x']
+            if FLAGS.downsample_rate > 1:
+                X[i,:] = np.reshape(np.load(self.list_IDs[k]), (-1, self.dim, FLAGS.downsample_rate, 1)).mean(axis=2)
+            else:
+                X[i,:] = np.reshape(np.load(self.list_IDs[k]), (-1, 1))
 
             # Store class
-            y[i] = data['y']
+            y[i] = self.labels[k]
 
-        return X, y
+        return X, keras.utils.to_categorical(y, num_classes=5)
 
     def on_epoch_end(self):
         """

@@ -36,7 +36,7 @@ parser.add_argument("--learn_rate_fine", type=float, default=0.000001, help="lea
 """
 parser.add_argument("--sampling_rate", type=int, default=1000, help="sampling rate used to generate signal (hz)",
                     required=False)
-parser.add_argument("--downsample_rate", type=int, default=0, help="rate at which to downsample the input signal",
+parser.add_argument("--downsample_rate", type=int, default=5, help="rate at which to downsample the input signal",
                     required=False)
 parser.add_argument("--s_per_epoch", type=int, default=30, help="seconds of signal data considered as a single epoch",
                     required=False)
