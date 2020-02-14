@@ -3,7 +3,7 @@ from glob import glob
 
 import numpy as np
 import tensorflow.keras as keras
-
+from sklearn.preprocessing import StandardScaler, KBinsDiscretizer, RobustScaler
 from src.model.flags import FLAGS, EFFECTIVE_SAMPLE_RATE
 
 
@@ -27,6 +27,7 @@ class DataGenerator(keras.utils.Sequence):
         self.labels = labels
         self.dim = FLAGS.s_per_epoch * EFFECTIVE_SAMPLE_RATE
         self.shuffle = True
+        self.scaler = StandardScaler() #KBinsDiscretizer(n_bins=5, encode='ordinal')
         self.on_epoch_end()
 
     def __len__(self):
@@ -63,13 +64,19 @@ class DataGenerator(keras.utils.Sequence):
         # Generate data
         for i, k in enumerate(batch_inds):
             # Store sample
+            data = np.load(self.list_IDs[k])
+            epoch = np.reshape(data['x'], (-1, 1))
+            self.scaler.partial_fit(epoch)
+            # epoch = np.fft.fft(epoch).real
+            epoch = self.scaler.transform(epoch)
+
             if FLAGS.downsample_rate > 1:
-                X[i,:] = np.reshape(np.load(self.list_IDs[k]), (-1, self.dim, FLAGS.downsample_rate, 1)).mean(axis=2)
+                X[i,:] = np.reshape(epoch, (-1, self.dim, FLAGS.downsample_rate, 1)).mean(axis=2)
             else:
-                X[i,:] = np.reshape(np.load(self.list_IDs[k]), (-1, 1))
+                X[i,:] = epoch
 
             # Store class
-            y[i] = self.labels[k]
+            y[i] = data['y'] - 1
 
         return X, keras.utils.to_categorical(y, num_classes=5)
 
@@ -79,5 +86,5 @@ class DataGenerator(keras.utils.Sequence):
         :return: None
         """
         self.indexes = np.arange(len(self.list_IDs))
-        if self.shuffle == True:
+        if self.shuffle:
             np.random.shuffle(self.indexes)
